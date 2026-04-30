@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #B91C1C;
+  --color-primary-dark: #7F1D1D;
+  --color-primary-light: #EF4444;
+  --color-accent-green: #15803D;
+  --color-text: #0F172A;
+  --color-muted: #64748B;
+  --color-border: #E2E8F0;
+  --color-surface: #FFFFFF;
+  --color-soft: #F8FAFC;
+
+  --font-inter: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-noto-bangla: 'Noto Sans Bengali', 'Mukti', system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-white text-ink;
+  }
+
+  .font-bangla {
+    font-family: var(--font-noto-bangla);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold leading-tight tracking-tight;
+  }
+
+  article h2 {
+    @apply text-xl font-bold mt-6 mb-3 text-brand-text;
+  }
+
+  article p {
+    @apply mb-4 leading-relaxed text-brand-text;
+  }
+
+  ::selection {
+    background-color: rgba(79, 70, 229, 0.18);
+    color: #0B1220;
+  }
+
+  /* Admin scrollbars */
+  .admin-scope ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .admin-scope ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .admin-scope ::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .admin-scope ::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+    background-clip: padding-box;
+  }
+
+  .admin-scope :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.28);
+    border-radius: 0.5rem;
+  }
+}
+
+@layer components {
+  .ui-card {
+    @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+  .ui-input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink
+           placeholder:text-ink-faint
+           focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15
+           disabled:bg-app disabled:text-ink-muted transition-colors;
+  }
+  .ui-label {
+    @apply text-xs font-medium uppercase tracking-wide text-ink-muted;
+  }
+  .ui-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+           transition-colors disabled:cursor-not-allowed disabled:opacity-60 select-none;
+  }
+  .ui-btn-primary {
+    @apply ui-btn bg-accent text-white shadow-sm hover:bg-accent-hover;
+  }
+  .ui-btn-secondary {
+    @apply ui-btn border border-line bg-white text-ink hover:bg-app;
+  }
+  .ui-btn-ghost {
+    @apply ui-btn text-ink-muted hover:text-ink hover:bg-app;
+  }
+  .ui-btn-danger {
+    @apply ui-btn bg-danger text-white hover:bg-red-600;
+  }
+  .ui-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink-muted;
+  }
+  .ui-kbd {
+    @apply inline-flex items-center rounded border border-line bg-app px-1.5 py-0.5 text-[10px] font-medium text-ink-muted;
+  }
+  .ui-divider {
+    @apply h-px w-full bg-line;
+  }
+}
+
+@layer utilities {
+  .ticker-scroll {
+    animation: ticker 30s linear infinite;
+  }
+
+  @keyframes ticker {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, #EEF1F5 0%, #F8FAFC 50%, #EEF1F5 100%);
+    background-size: 800px 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+}

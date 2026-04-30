@@ -1,0 +1,39 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Main Site
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 72.61.243.140
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/phulpur24
+            if [ ! -d ".git" ]; then
+              git clone git@github.com:${{ github.repository }}.git .
+            fi
+            /home/phulpur24/deploy.sh
+
+  deploy-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Admin Site
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 72.61.243.140
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/admin-phulpur24
+            if [ ! -d ".git" ]; then
+              git clone git@github.com:${{ github.repository }}.git .
+            fi
+            /home/admin-phulpur24/deploy.sh

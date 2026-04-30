@@ -1,0 +1,82 @@
+name: Phulpur24 Intelligent Agent Setup
+version: 1.0.0
+schema: v1
+
+models:
+  - uses: anthropic/claude-sonnet-4-6
+    override:
+      name: Claude Sonnet Agent
+      roles:
+        - chat
+        - edit
+        - apply
+      capabilities:
+        - tool_use
+        - image_input
+      defaultCompletionOptions:
+        temperature: 0.2
+
+  - uses: openai/gpt-4
+    override:
+      name: OpenAI Coding Agent
+      roles:
+        - chat
+        - edit
+        - apply
+      capabilities:
+        - tool_use
+        - image_input
+      defaultCompletionOptions:
+        temperature: 0.2
+
+  - name: Local Ollama Autocomplete
+    provider: ollama
+    model: qwen2.5-coder:7b
+    apiBase: http://localhost:11434
+    roles:
+      - autocomplete
+    autocompleteOptions:
+      debounceDelay: 250
+      maxPromptTokens: 1024
+      onlyMyCode: true
+
+context:
+  - provider: file
+  - provider: code
+  - provider: diff
+  - provider: terminal
+  - provider: docs
+
+docs:
+  - name: Next.js
+    startUrl: https://nextjs.org/docs
+  - name: React
+    startUrl: https://react.dev/reference/react
+  - name: Tailwind CSS
+    startUrl: https://tailwindcss.com/docs
+  - name: Continue
+    startUrl: https://docs.continue.dev
+
+rules:
+  - Keep Phulpur24 frontend-only unless explicitly asked to add a backend.
+  - Preserve bilingual /bn and /en public routes.
+  - Use mock data from src/lib/mock-data.ts and never commit secrets.
+  - Run lint, TypeScript, audit, and build before finishing code changes.
+
+prompts:
+  - name: verify-phulpur24
+    description: Run the standard Phulpur24 verification checklist.
+    prompt: |
+      Run the standard project checks for this repository:
+      npm run lint
+      npx tsc --noEmit
+      npm audit
+      npm run build
+      Then summarize failures with exact files and commands.
+
+  - name: implement-bilingual-route
+    description: Add or update a bilingual public route.
+    prompt: |
+      Add or update the requested public route for both Bangla and English when practical.
+      Reuse existing components and mock data. Keep the site frontend-only.
+      Verify representative /bn and /en routes before finishing.
