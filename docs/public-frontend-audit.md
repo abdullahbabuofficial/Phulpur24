@@ -360,7 +360,8 @@ best-effort; it removes the easy ones.
    permissive baseline immediately.
 4. **(Optional) strip Vercel debug headers** in `src/middleware.ts`
    (Finding #4).
-5. After RLS lands, **migrate auth to `@supabase/ssr`** so admin
-   middleware can enforce auth at the edge instead of relying on
-   `AdminAuthGate` running in the browser. Combined with RLS, this
-   makes the admin app truly safe.
+5. **Cookie-backed Supabase auth (`@supabase/ssr`)** — implemented: browser
+   sessions use `createBrowserClient`; middleware refreshes JWT cookies via
+   `createServerClient` + `getUser()`. Optional next step: reject unauthenticated
+   `/admin/*` at the edge using the same server client (still primarily gated by
+   `AdminAuthGate` today).

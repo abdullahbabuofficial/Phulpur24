@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  forwardAuthCookies,
+  updateSupabaseSession,
+} from '@/lib/supabase/middleware-session';
 
 /**
  * Phulpur24 edge middleware.
  *
- * Four jobs:
+ * Five jobs:
+ *
+ *  0. Supabase session refresh — `updateSupabaseSession` runs first on every
+ *     matched request so auth cookies stay valid (`@supabase/ssr` server
+ *     client + `getUser()`). Redirect responses copy refreshed Set-Cookie
+ *     headers so sessions are not dropped on the admin-host → public redirect.
+ *
  *  1. Public-side kill-switch — when `PUBLIC_SITE_HIDE_ADMIN=1`, every
  *     /admin/* and /api/ai/* request returns a hard 404 with no body. Set
  *     this on the public-site deploy (phulpur24.com) so the admin console
@@ -93,7 +103,10 @@ function applyAdminSecurityHeaders(res: NextResponse) {
   return res;
 }
 
-function redirectPublicAwayFromAdminHost(request: NextRequest): NextResponse {
+function redirectPublicAwayFromAdminHost(
+  request: NextRequest,
+  sessionResponse: NextResponse
+): NextResponse {
   const canonical = process.env.PUBLIC_SITE_URL?.replace(/\/$/, '');
   const { pathname, search } = request.nextUrl;
 
@@ -101,7 +114,9 @@ function redirectPublicAwayFromAdminHost(request: NextRequest): NextResponse {
   // bookmarks and address-bar visits. Send those straight to the admin
   // login on the same host — never bounce them to the public site.
   if (pathname === '/') {
-    return NextResponse.redirect(new URL('/admin/login', request.url), 307);
+    const res = NextResponse.redirect(new URL('/admin/login', request.url), 307);
+    forwardAuthCookies(sessionResponse, res);
+    return res;
   }
 
   // Any other public-flavoured path on the admin host (e.g. `/bn`,
@@ -110,14 +125,19 @@ function redirectPublicAwayFromAdminHost(request: NextRequest): NextResponse {
   // who shared an admin-host link by mistake.
   if (canonical) {
     const target = `${canonical}${pathname}${search}`;
-    return NextResponse.redirect(target, 308);
+    const res = NextResponse.redirect(target, 308);
+    forwardAuthCookies(sessionResponse, res);
+    return res;
   }
 
   // No canonical configured — fall back to the admin login on the same host.
-  return NextResponse.redirect(new URL('/admin/login', request.url), 307);
+  const res = NextResponse.redirect(new URL('/admin/login', request.url), 307);
+  forwardAuthCookies(sessionResponse, res);
+  return res;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
+  const sessionResponse = await updateSupabaseSession(request);
   const { pathname } = request.nextUrl;
   const isAdmin = isAdminPath(pathname);
 
@@ -128,17 +148,17 @@ export function middleware(request: NextRequest) {
 
   // 2. Admin-side reverse kill-switch
   if (!isAdmin && process.env.ADMIN_SITE_HIDE_PUBLIC === '1') {
-    return redirectPublicAwayFromAdminHost(request);
+    return redirectPublicAwayFromAdminHost(request, sessionResponse);
   }
 
   // 3. Strict security headers on admin (admin paths get extra protection
   // on top of the baseline headers from next.config.mjs).
   if (isAdmin) {
-    return stripDebugHeaders(applyAdminSecurityHeaders(NextResponse.next()));
+    return stripDebugHeaders(applyAdminSecurityHeaders(sessionResponse));
   }
 
   // 4. Public paths: just remove the Vercel debug headers if we can.
-  return stripDebugHeaders(NextResponse.next());
+  return stripDebugHeaders(sessionResponse);
 }
 
 /**

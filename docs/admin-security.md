@@ -30,7 +30,13 @@ Set on each deployment:
 | `PUBLIC_SITE_URL` | not set | `https://phulpur24.com` (canonical) |
 | `NEXT_PUBLIC_ADMIN_ALLOW_DEMO` | not set | not set in prod |
 
-## Layer 2 — Edge kill-switch (`middleware.ts`)
+## Layer 2a — Cookie-backed auth refresh (`middleware.ts` + `@supabase/ssr`)
+
+The browser uses `createBrowserClient` from `@supabase/ssr` so Supabase stores the session in cookies (not only `localStorage`). On every matched request, middleware runs `createServerClient` + `auth.getUser()` to refresh expired access tokens and rewrite cookies. Admin redirects from the admin-only host to the public domain forward `Set-Cookie` so a refresh is not lost mid-redirect.
+
+Public RSC data fetching still uses a separate non-persisted anon server client (`src/lib/supabase/db.ts`); only the browser admin console relies on the cookie session.
+
+## Layer 2b — Edge kill-switch (`middleware.ts`)
 
 When `PUBLIC_SITE_HIDE_ADMIN=1`, every `/admin/*` and `/api/ai/*` request is replied to with a hard `404` and an empty body, indistinguishable from a non-existent path. The admin bundle never ships a useful response from the public domain.
 
@@ -55,7 +61,7 @@ Plus a baseline applied site-wide via `next.config.mjs` (`Strict-Transport-Secur
 Protects every page under `/admin/*` except `/admin/login`. The gate:
 
 1. Synchronously bounces requests with no cached session straight to the login page.
-2. Asynchronously verifies the cached session against `supabase.auth.getSession()`. A stale `localStorage` entry alone is not enough — Supabase must agree the access token is still alive.
+2. Asynchronously verifies the cached session against `supabase.auth.getSession()` (backed by cookies when using the browser client). A stale `localStorage` display snapshot alone is not enough — Supabase must agree the access token is still alive.
 3. Subscribes to `supabase.auth.onAuthStateChange`, so a sign-out in another tab or a server-side token revocation kicks every open admin tab to the login screen within milliseconds.
 
 ## Layer 5 — Sign-in (`adminAuth.ts`)
@@ -76,10 +82,7 @@ The Anthropic-backed draft endpoint requires `Authorization: Bearer <supabase ac
 
 ## Future hardening (not yet shipped)
 
-These are the next steps when admin moves to its own deploy:
-
-- **Migrate auth to `@supabase/ssr`** so the access token lives in an `httpOnly` cookie. Then `middleware.ts` can require a valid token at the edge instead of relying on a client-side gate.
-- **Enable Supabase Row-Level Security** on every writable table (`articles`, `categories`, `media`, `users`, `comments`, `newsletter_subscribers`, `messages`, `site_settings`). RLS is the only thing that actually keeps a stolen anon key from being abused.
+- **Edge auth for `/admin/*`** — optionally reject unauthenticated requests in middleware using the same `createServerClient` session (today the gate is still primarily client-side `AdminAuthGate`).
 - **Vercel Access / Cloudflare Access** in front of `admin.phulpur24.com` for an extra IP / SSO layer.
 - **Server-side rate limiting** on `/api/ai/draft` with a per-user counter (Upstash Redis works on Edge runtime).
 - **Audit log** every `signIn` success/failure into a `admin_audit_log` table.

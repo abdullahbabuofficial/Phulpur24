@@ -15,7 +15,7 @@
  *   - `src/middleware.ts`
  *   - Other code with no `'use client'` ancestor.
  *
- * For ordinary anon-key reads/writes, keep using `@/lib/supabase/client`.
+ * For ordinary anon-key reads/writes, keep using `@/lib/supabase/client` / `getSupabase()`.
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
