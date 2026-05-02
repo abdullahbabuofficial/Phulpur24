@@ -11,11 +11,14 @@ import { NextRequest, NextResponse } from 'next/server';
  *     non-existent path.
  *
  *  2. Admin-side reverse kill-switch — when `ADMIN_SITE_HIDE_PUBLIC=1`,
- *     every non-admin URL on the admin deploy (`/`, `/bn/*`, `/en/*`,
- *     `/about`, `/contact`, `/search`, etc.) is redirected away. If
- *     `PUBLIC_SITE_URL` is also set, requests are 308-redirected to the
- *     canonical public domain (great for SEO + bookmarks). Otherwise
- *     everything is 307-redirected to `/admin/login`.
+ *     every non-admin URL on the admin deploy is redirected away:
+ *       - the bare host (`/`) always 307-redirects to `/admin/login` on
+ *         the same host, so typed bookmarks land on admin (not public);
+ *       - other public-flavoured paths (`/bn/*`, `/en/*`, `/about`,
+ *         `/contact`, `/search`, …) 308-redirect to `PUBLIC_SITE_URL`
+ *         when configured, preserving path + query so accidentally-
+ *         shared admin-host links resolve on the public domain. Without
+ *         `PUBLIC_SITE_URL` they fall back to `/admin/login`.
  *
  *  3. Security headers — for every admin page and admin-only API route we
  *     send strict headers: deny iframing, disable caching, deny indexing,
@@ -74,15 +77,24 @@ function redirectPublicAwayFromAdminHost(request: NextRequest): NextResponse {
   const canonical = process.env.PUBLIC_SITE_URL?.replace(/\/$/, '');
   const { pathname, search } = request.nextUrl;
 
+  // The bare admin host (`/`) is the friendliest landing spot for typed
+  // bookmarks and address-bar visits. Send those straight to the admin
+  // login on the same host — never bounce them to the public site.
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/admin/login', request.url), 307);
+  }
+
+  // Any other public-flavoured path on the admin host (e.g. `/bn`,
+  // `/en/news/foo`, `/about`) is redirected to the canonical public
+  // domain when one is configured — preserves the article URL for users
+  // who shared an admin-host link by mistake.
   if (canonical) {
-    // Send users to the canonical public domain, preserving the path + query.
     const target = `${canonical}${pathname}${search}`;
     return NextResponse.redirect(target, 308);
   }
 
-  // Fallback: shove every non-admin request to the admin login.
-  const loginUrl = new URL('/admin/login', request.url);
-  return NextResponse.redirect(loginUrl, 307);
+  // No canonical configured — fall back to the admin login on the same host.
+  return NextResponse.redirect(new URL('/admin/login', request.url), 307);
 }
 
 export function middleware(request: NextRequest) {
