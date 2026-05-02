@@ -286,9 +286,23 @@ alter default privileges in schema public grant all on tables    to anon, authen
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 
--- ---------- RLS hints ----------
--- RLS is currently DISABLED. When real Auth is wired, run something like:
---   alter table articles  enable row level security;
---   alter table profiles  enable row level security;
---   create policy "public read" on articles for select using (status = 'published');
---   create policy "admin write" on articles for all to authenticated using (true) with check (true);
+-- ---------- RLS ----------
+-- The live project has RLS enabled on every public.* table with role-aware
+-- policies. The canonical migrations that produced that state are stored
+-- in Supabase migration history:
+--   1) lock_down_rls_role_aware                 — drops permissive policies,
+--      adds is_admin()/is_staff() helpers, recreates all policies as
+--      "anon read what's intentionally public" + "admin all the rest".
+--   2) rls_tighten_anon_inserts_and_definer_funcs — adds WITH CHECK
+--      validation on newsletter / contact_messages / page_views inserts.
+--   3) rls_restore_definer_func_execute         — keeps EXECUTE on
+--      is_admin/is_staff for the `authenticated` role so RLS expressions
+--      resolve when admins call protected tables.
+--
+-- Helper functions used by every authenticated policy:
+--   public.is_admin()  -> true if profiles.role = 'admin' for auth.uid()
+--   public.is_staff()  -> true if profiles.role is any of the 7 enum roles
+--
+-- When provisioning a fresh project, apply the three migrations in order
+-- after seeding base data. Storage bucket `media` is public-read via URL
+-- (no SELECT policy on storage.objects); INSERT/DELETE require is_staff().

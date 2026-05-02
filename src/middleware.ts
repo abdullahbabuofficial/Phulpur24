@@ -54,6 +54,26 @@ function isAdminPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Best-effort suppression of Vercel/Next.js framework-fingerprinting headers.
+ * Vercel adds some of these at its proxy layer AFTER middleware finishes, so
+ * not all calls to `delete` succeed in production — but `x-matched-path` and
+ * `x-nextjs-*` are typically removable from middleware. Low-severity hardening.
+ */
+const VERCEL_DEBUG_HEADERS = [
+  'x-matched-path',
+  'x-nextjs-prerender',
+  'x-nextjs-stale-time',
+  'x-vercel-cache',
+  'x-vercel-enable-rewrite-caching',
+  'x-vercel-id',
+];
+
+function stripDebugHeaders(res: NextResponse) {
+  for (const h of VERCEL_DEBUG_HEADERS) res.headers.delete(h);
+  return res;
+}
+
 function applyAdminSecurityHeaders(res: NextResponse) {
   res.headers.set('X-Frame-Options', 'DENY');
   res.headers.set('X-Content-Type-Options', 'nosniff');
@@ -111,12 +131,14 @@ export function middleware(request: NextRequest) {
     return redirectPublicAwayFromAdminHost(request);
   }
 
-  // 3. Strict security headers on admin
+  // 3. Strict security headers on admin (admin paths get extra protection
+  // on top of the baseline headers from next.config.mjs).
   if (isAdmin) {
-    return applyAdminSecurityHeaders(NextResponse.next());
+    return stripDebugHeaders(applyAdminSecurityHeaders(NextResponse.next()));
   }
 
-  return NextResponse.next();
+  // 4. Public paths: just remove the Vercel debug headers if we can.
+  return stripDebugHeaders(NextResponse.next());
 }
 
 /**

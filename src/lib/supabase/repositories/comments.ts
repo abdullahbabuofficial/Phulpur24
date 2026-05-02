@@ -42,9 +42,12 @@ export async function createComment(input: CommentInput) {
   if (!row.author_name || !row.body) {
     return { data: null as CommentRow | null, error: { message: 'Name and body are required.' } };
   }
-  const { data, error } = await supabase.from('comments').insert(row).select('*').single();
+  // Anon RLS: INSERT is allowed (status='pending' on a published article);
+  // SELECT only returns approved comments to anon. Don't chain `.select()` —
+  // the just-inserted pending comment is invisible to the submitter.
+  const { error } = await supabase.from('comments').insert(row);
   if (error) return { data: null as CommentRow | null, error: { message: error.message ?? 'Failed to post comment.' } };
-  return { data: data as CommentRow, error: null };
+  return { data: row as unknown as CommentRow, error: null };
 }
 
 export async function moderate(id: string, status: ModerationStatus) {

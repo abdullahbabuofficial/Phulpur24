@@ -21,13 +21,12 @@ export async function createMessage(input: ContactInput) {
   if (!row.name || !row.email || !row.message) {
     return { data: null as ContactMessageRow | null, error: { message: 'Name, email and message are required.' } };
   }
-  const { data, error } = await supabase
-    .from('contact_messages')
-    .insert(row)
-    .select('*')
-    .single();
+  // Anon RLS: INSERT is allowed; SELECT is admin-only. Don't chain
+  // `.select()` — public callers can't read back the row they just
+  // submitted, and that would surface as a fake "send failed" error.
+  const { error } = await supabase.from('contact_messages').insert(row);
   if (error) return { data: null as ContactMessageRow | null, error: { message: error.message ?? 'Failed to send message.' } };
-  return { data: data as ContactMessageRow, error: null };
+  return { data: row as ContactMessageRow, error: null };
 }
 
 export async function listMessages(limit = 100) {
