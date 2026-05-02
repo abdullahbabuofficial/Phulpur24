@@ -26,6 +26,8 @@ Set on each deployment:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | required | required |
 | `ANTHROPIC_API_KEY` | not set | required |
 | `PUBLIC_SITE_HIDE_ADMIN` | `1` | not set / `0` |
+| `ADMIN_SITE_HIDE_PUBLIC` | not set | `1` |
+| `PUBLIC_SITE_URL` | not set | `https://phulpur24.com` (canonical) |
 | `NEXT_PUBLIC_ADMIN_ALLOW_DEMO` | not set | not set in prod |
 
 ## Layer 2 — Edge kill-switch (`middleware.ts`)
