@@ -29,6 +29,8 @@ const rolePermissions: { role: ProfileRow['role']; perms: string[]; tone: 'dange
   { role: 'reporter', perms: ['Create & edit own posts', 'Submit for review'], tone: 'success' },
   { role: 'translator', perms: ['Translate posts', 'Read-only on others'], tone: 'accent' },
   { role: 'seo_editor', perms: ['Edit SEO metadata', 'View analytics'], tone: 'warning' },
+  { role: 'sports_reporter', perms: ['Sports beats', 'Create & submit posts'], tone: 'success' },
+  { role: 'local_correspondent', perms: ['Local beats', 'Create & submit posts'], tone: 'success' },
 ];
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -63,14 +65,27 @@ export default function UsersPage() {
       setError('Enter a valid email address.');
       return;
     }
-    const res = await usersRepo.inviteUser({ email, role: inviteRole });
-    if (res.error) {
-      setError(res.error.message);
-      return;
+    try {
+      const res = await fetch('/api/admin/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role: inviteRole }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? `Invite failed (${res.status}).`);
+        return;
+      }
+      push({
+        tone: 'success',
+        title: 'Invitation sent',
+        description: `${email} will receive a Supabase email to set a password.`,
+      });
+      setInviteEmail('');
+      reload();
+    } catch {
+      setError('Network error — try again.');
     }
-    push({ tone: 'success', title: `Invitation sent to ${email}` });
-    setInviteEmail('');
-    reload();
   };
 
   const startEdit = (u: ProfileRow) => {
@@ -188,7 +203,16 @@ export default function UsersPage() {
                             </button>
                             <button
                               onClick={() => handleRemove(u)}
-                              disabled={u.id === 'admin'}
+                              disabled={
+                                u.role === 'admin' &&
+                                users.filter((x) => x.role === 'admin').length <= 1
+                              }
+                              title={
+                                u.role === 'admin' &&
+                                users.filter((x) => x.role === 'admin').length <= 1
+                                  ? 'Promote another admin before removing this account.'
+                                  : undefined
+                              }
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
                               aria-label="Remove"
                             >
@@ -205,7 +229,14 @@ export default function UsersPage() {
 
         <div className="space-y-4">
           <Card padded>
-            <CardHeader title={editingId ? 'Edit user' : 'Invite new user'} />
+            <CardHeader
+              title={editingId ? 'Edit user' : 'Invite teammate'}
+              subtitle={
+                editingId
+                  ? undefined
+                  : 'Sends a Supabase Auth email · requires SUPABASE_SERVICE_ROLE_KEY on the server.'
+              }
+            />
             {error ? (
               <div className="mt-3 rounded-lg border border-danger/20 bg-danger-soft px-3 py-2 text-xs text-danger-text">
                 {error}

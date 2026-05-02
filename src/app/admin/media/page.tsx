@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/admin/ui/EmptyState';
 import { Tabs } from '@/components/admin/ui/Tabs';
 import { Icon } from '@/components/admin/ui/Icon';
 import { useToast } from '@/components/admin/ui/Toast';
+import { getAdminSession } from '@/components/admin/adminAuth';
 import { media as mediaRepo } from '@/lib/supabase';
 import type { MediaAssetRow, MediaType } from '@/lib/supabase/types';
 
@@ -24,6 +25,7 @@ export default function MediaPage() {
   const [type, setType] = useState<MediaType | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const reload = async () => {
@@ -43,16 +45,30 @@ export default function MediaPage() {
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const created = await mediaRepo.uploadMedia(
-      Array.from(files).map((f) => ({
-        filename: f.name,
-        url: URL.createObjectURL(f),
-        type: f.type.startsWith('video') ? 'video' : 'image',
-        size_bytes: f.size,
-      }))
-    );
-    push({ tone: 'success', title: `${files.length} file${files.length === 1 ? '' : 's'} uploaded` });
-    if (created.data?.[0]) setSelectedId(created.data[0].id);
+    setUploading(true);
+    const uploadedBy = getAdminSession()?.name ?? 'Editor';
+    let ok = 0;
+    let fail = 0;
+    let lastNewId: string | null = null;
+    for (const file of Array.from(files)) {
+      const res = await mediaRepo.uploadFileToStorage(file, uploadedBy);
+      if (res.error) {
+        fail++;
+        push({ tone: 'error', title: `${file.name}`, description: res.error.message });
+      } else if (res.data) {
+        ok++;
+        lastNewId = res.data.id;
+      }
+    }
+    setUploading(false);
+    if (ok > 0) {
+      push({
+        tone: 'success',
+        title: `${ok} file${ok === 1 ? '' : 's'} uploaded to storage`,
+        description: fail > 0 ? `${fail} failed — see toasts above.` : 'Public URLs are ready to paste into posts.',
+      });
+    }
+    if (lastNewId) setSelectedId(lastNewId);
     if (fileInput.current) fileInput.current.value = '';
     reload();
   };
@@ -83,8 +99,12 @@ export default function MediaPage() {
         description="Upload, browse, and reuse images and videos across articles."
         crumbs={[{ label: 'Console', href: '/admin/dashboard' }, { label: 'Media' }]}
         actions={
-          <Button iconLeft={<Icon.Upload size={14} />} onClick={() => fileInput.current?.click()}>
-            Upload files
+          <Button
+            iconLeft={<Icon.Upload size={14} />}
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            {uploading ? 'Uploading…' : 'Upload files'}
           </Button>
         }
       />
@@ -150,7 +170,9 @@ export default function MediaPage() {
               <Icon.Upload size={18} />
             </span>
             <p className="text-sm font-medium text-ink">Drop files here, or click to browse</p>
-            <p className="text-xs text-ink-muted">JPG, PNG, GIF, WebP, MP4 · up to 10 MB each</p>
+            <p className="text-xs text-ink-muted">
+              JPG, PNG, GIF, WebP, MP4 · stored in Supabase Storage (`media` bucket)
+            </p>
           </button>
 
           {/* Assets */}

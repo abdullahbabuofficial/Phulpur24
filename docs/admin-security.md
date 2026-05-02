@@ -38,7 +38,7 @@ Public RSC data fetching still uses a separate non-persisted anon server client 
 
 ## Layer 2b — Edge kill-switch (`middleware.ts`)
 
-When `PUBLIC_SITE_HIDE_ADMIN=1`, every `/admin/*` and `/api/ai/*` request is replied to with a hard `404` and an empty body, indistinguishable from a non-existent path. The admin bundle never ships a useful response from the public domain.
+When `PUBLIC_SITE_HIDE_ADMIN=1`, every `/admin/*`, `/api/admin/*`, and `/api/ai/*` request is replied to with a hard `404` and an empty body, indistinguishable from a non-existent path. The admin bundle never ships a useful response from the public domain.
 
 This is the single most effective control while admin still lives in the same Next.js app as the public site.
 

@@ -1,4 +1,4 @@
-import { supabase } from '../client';
+import { getSupabase } from '../db';
 import { logAction } from './audit';
 import type { MediaAssetRow, MediaType } from '../types';
 
@@ -7,7 +7,20 @@ export interface ListMediaParams {
   type?: MediaType | 'all';
 }
 
+/** Extract `bucket/path` object path from a Supabase public object URL, or null. */
+export function storagePathFromPublicMediaUrl(url: string): string | null {
+  const marker = '/object/public/media/';
+  const i = url.indexOf(marker);
+  if (i === -1) return null;
+  try {
+    return decodeURIComponent(url.slice(i + marker.length).split('?')[0] ?? '');
+  } catch {
+    return null;
+  }
+}
+
 export async function listMedia(params: ListMediaParams = {}) {
+  const supabase = getSupabase();
   const { search = '', type = 'all' } = params;
   let query = supabase.from('media_assets').select('*').order('uploaded_at', { ascending: false });
   if (type !== 'all') query = query.eq('type', type);
@@ -19,9 +32,11 @@ export async function listMedia(params: ListMediaParams = {}) {
   return { data: (data ?? []) as MediaAssetRow[], error };
 }
 
+/** @deprecated Prefer `uploadFileToStorage` — blob URLs are not valid cross-device. */
 export async function uploadMedia(
   files: { filename: string; url: string; type: MediaType; size_bytes: number }[]
 ) {
+  const supabase = getSupabase();
   const rows = files.map((f, i) => ({
     id: `media-${Date.now()}-${i}`,
     filename: f.filename,
@@ -40,6 +55,16 @@ export async function uploadMedia(
 }
 
 export async function deleteMedia(id: string) {
+  const supabase = getSupabase();
+  const { data: row } = await supabase.from('media_assets').select('url').eq('id', id).maybeSingle();
+  const path = row?.url ? storagePathFromPublicMediaUrl(row.url) : null;
+  if (path) {
+    const { error: rmErr } = await supabase.storage.from('media').remove([path]);
+    if (rmErr) {
+      // eslint-disable-next-line no-console
+      console.warn('[media] Storage delete failed (continuing with DB row):', rmErr.message);
+    }
+  }
   const { error } = await supabase.from('media_assets').delete().eq('id', id);
   if (!error) void logAction('Deleted media', id, 'Admin', 'image');
   return { data: !error, error };
@@ -48,7 +73,11 @@ export async function deleteMedia(id: string) {
 /**
  * Upload a real File to the `media` storage bucket and persist a row.
  */
-export async function uploadFileToStorage(file: File): Promise<{ data: MediaAssetRow | null; error: { message: string } | null }> {
+export async function uploadFileToStorage(
+  file: File,
+  uploadedBy = 'Editor'
+): Promise<{ data: MediaAssetRow | null; error: { message: string } | null }> {
+  const supabase = getSupabase();
   const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, '-');
   const path = `${new Date().getFullYear()}/${Date.now()}-${safeName}`;
   const { error: upErr } = await supabase.storage.from('media').upload(path, file, {
@@ -65,13 +94,13 @@ export async function uploadFileToStorage(file: File): Promise<{ data: MediaAsse
     type: file.type.startsWith('video') ? 'video' : 'image',
     size_bytes: file.size,
     size_label: formatBytes(file.size),
-    uploaded_by: 'Admin',
+    uploaded_by: uploadedBy,
     uploaded_at: new Date().toISOString(),
     alt_text: null,
   };
   const { data, error } = await supabase.from('media_assets').insert(row).select('*').single();
   if (error) return { data: null, error: { message: error.message ?? 'Failed to record asset.' } };
-  void logAction('Uploaded media', file.name, 'Admin', 'image');
+  void logAction('Uploaded media', file.name, uploadedBy, 'image');
   return { data: data as MediaAssetRow, error: null };
 }
 

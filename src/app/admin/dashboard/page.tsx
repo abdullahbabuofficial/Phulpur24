@@ -1,41 +1,44 @@
 import Link from 'next/link';
 import AdminPageShell from '@/components/admin/AdminPageShell';
+import { DashboardNewArticleButton, DashboardRefreshButton } from '@/components/admin/DashboardToolbar';
 import { PageHeader } from '@/components/admin/ui/PageHeader';
 import { StatTile } from '@/components/admin/ui/StatTile';
 import { Card, CardHeader } from '@/components/admin/ui/Card';
 import { Badge } from '@/components/admin/ui/Badge';
-import { Button } from '@/components/admin/ui/Button';
 import { Icon } from '@/components/admin/ui/Icon';
 import { analytics, audit } from '@/lib/supabase';
+import { createSupabaseServer } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default async function DashboardPage() {
+  const sb = await createSupabaseServer();
   const [stats, top, recent] = await Promise.all([
-    analytics.getDashboardStats(),
-    analytics.getTopArticles(5),
-    audit.recentAudit(8),
+    analytics.getDashboardStats(sb),
+    analytics.getTopArticles(5, sb),
+    audit.recentAudit(8, sb),
   ]);
 
   const dashboardStats = stats.data!;
   const topArticles = top.data ?? [];
   const auditLogs = recent.data ?? [];
-  const peak = Math.max(...dashboardStats.monthly_views);
+  const peak = Math.max(1, ...dashboardStats.monthly_views);
+
+  const weekViews = dashboardStats.weekly_views.reduce((s, n) => s + n, 0);
 
   const tiles = [
     {
       label: 'Published',
       value: dashboardStats.published_posts,
-      delta: { value: '12 this week', positive: true },
+      hint: 'Live articles',
       icon: <Icon.Posts size={18} />,
       tone: 'accent' as const,
     },
     {
       label: 'Drafts',
       value: dashboardStats.drafts,
-      delta: { value: '2 from yesterday', positive: false },
       icon: <Icon.Pencil size={18} />,
       tone: 'warning' as const,
     },
@@ -49,21 +52,28 @@ export default async function DashboardPage() {
     {
       label: 'Today’s views',
       value: dashboardStats.today_views,
-      delta: { value: '8.3%', positive: true },
+      hint: 'From page_views (UTC day)',
       icon: <Icon.Eye size={18} />,
       tone: 'success' as const,
     },
     {
+      label: 'Last 7 days',
+      value: weekViews,
+      hint: 'Page views · UTC buckets',
+      icon: <Icon.BarChart size={18} />,
+      tone: 'neutral' as const,
+    },
+    {
       label: 'SEO issues',
       value: dashboardStats.seo_issues,
-      hint: 'Need fixing',
+      hint: 'Articles with SEO score < 70',
       icon: <Icon.Search size={18} />,
       tone: 'danger' as const,
     },
     {
       label: 'Translation queue',
       value: dashboardStats.translation_pending,
-      hint: 'Awaiting English',
+      hint: 'Not marked complete',
       icon: <Icon.Globe size={18} />,
       tone: 'neutral' as const,
     },
@@ -77,16 +87,14 @@ export default async function DashboardPage() {
         crumbs={[{ label: 'Console' }, { label: 'Dashboard' }]}
         actions={
           <>
-            <Button variant="secondary" iconLeft={<Icon.Refresh size={14} />}>Refresh</Button>
-            <Link href="/admin/posts/new">
-              <Button iconLeft={<Icon.Plus size={14} />}>New article</Button>
-            </Link>
+            <DashboardRefreshButton />
+            <DashboardNewArticleButton />
           </>
         }
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
         {tiles.map((t) => (
           <StatTile key={t.label} {...t} />
         ))}
@@ -96,8 +104,8 @@ export default async function DashboardPage() {
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2" padded>
           <CardHeader
-            title="Page views — last 12 months"
-            subtitle="Hourly resolution available in Analytics"
+            title="Monthly snapshot"
+            subtitle="Series from dashboard_stats · wire automation to refresh from analytics"
             action={
               <Link href="/admin/analytics" className="inline-flex items-center gap-1 text-sm text-accent hover:underline">
                 Analytics
@@ -235,7 +243,7 @@ function BarChart({ data, labels, peak }: { data: number[]; labels: string[]; pe
           <div key={i} className="group flex flex-1 flex-col items-center gap-2">
             <div
               className="relative w-full flex-1 rounded-md bg-accent-soft transition-colors group-hover:bg-accent/20"
-              title={`${v}K views`}
+              title={`${v.toLocaleString()} (chart units)`}
             >
               <div
                 className="absolute bottom-0 left-0 right-0 rounded-md bg-gradient-to-t from-accent to-indigo-400 transition-all"

@@ -15,7 +15,7 @@ import {
  *     headers so sessions are not dropped on the admin-host → public redirect.
  *
  *  1. Public-side kill-switch — when `PUBLIC_SITE_HIDE_ADMIN=1`, every
- *     /admin/* and /api/ai/* request returns a hard 404 with no body. Set
+ *     /admin/*, /api/admin/*, and /api/ai/* request returns a hard 404 with no body. Set
  *     this on the public-site deploy (phulpur24.com) so the admin console
  *     only exists on its own subdomain. Indistinguishable from a
  *     non-existent path.
@@ -45,6 +45,7 @@ import {
 
 const ADMIN_PREFIX = '/admin';
 const ADMIN_API_PREFIX = '/api/ai';
+const ADMIN_REST_API_PREFIX = '/api/admin';
 
 const HIDE_ADMIN_RESPONSE = new NextResponse(null, {
   status: 404,
@@ -60,7 +61,9 @@ function isAdminPath(pathname: string): boolean {
     pathname === ADMIN_PREFIX ||
     pathname.startsWith(`${ADMIN_PREFIX}/`) ||
     pathname === ADMIN_API_PREFIX ||
-    pathname.startsWith(`${ADMIN_API_PREFIX}/`)
+    pathname.startsWith(`${ADMIN_API_PREFIX}/`) ||
+    pathname === ADMIN_REST_API_PREFIX ||
+    pathname.startsWith(`${ADMIN_REST_API_PREFIX}/`)
   );
 }
 

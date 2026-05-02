@@ -1,17 +1,24 @@
-import { supabase } from '../client';
+import { getSupabase } from '../db';
 import type { Lang, NewsletterSubscriberRow } from '../types';
 
 export async function subscribe(email: string, lang: Lang = 'bn', source = 'public-site') {
+  const supabase = getSupabase();
   const trimmed = email.trim().toLowerCase();
   if (!trimmed) return { data: null as NewsletterSubscriberRow | null, error: { message: 'Email is required.' } };
+
+  const id = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
   // Anon RLS: INSERT is allowed; SELECT on this table is admin-only. So we
   // must NOT chain `.select()` here — public callers can't read back their
   // own row, and that would surface as a confusing "no rows" error to the
   // user even though the subscription was recorded.
-  const { error } = await supabase
-    .from('newsletter_subscribers')
-    .insert({ email: trimmed, lang, source, status: 'active' });
+  const { error } = await supabase.from('newsletter_subscribers').insert({
+    id,
+    email: trimmed,
+    lang,
+    source,
+    status: 'active',
+  });
 
   if (error) {
     if (error.code === '23505') {
@@ -22,15 +29,18 @@ export async function subscribe(email: string, lang: Lang = 'bn', source = 'publ
   // Synthesize a return shape from the input so callers don't need to read
   // back from the table.
   const synthesized = {
+    id,
     email: trimmed,
     lang,
     source,
     status: 'active',
+    subscribed_at: new Date().toISOString(),
   } as NewsletterSubscriberRow;
   return { data: synthesized, error: null };
 }
 
 export async function listSubscribers(limit = 200) {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('newsletter_subscribers')
     .select('*')
@@ -40,6 +50,7 @@ export async function listSubscribers(limit = 200) {
 }
 
 export async function unsubscribe(id: string) {
+  const supabase = getSupabase();
   const { error } = await supabase.from('newsletter_subscribers').delete().eq('id', id);
   return { data: !error, error };
 }

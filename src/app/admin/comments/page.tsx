@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import AdminPageShell from '@/components/admin/AdminPageShell';
 import { PageHeader } from '@/components/admin/ui/PageHeader';
 import { Card } from '@/components/admin/ui/Card';
@@ -22,29 +22,42 @@ const TABS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
 ];
 
+const emptyCounts: Record<Filter, number> = { pending: 0, approved: 0, rejected: 0, spam: 0, all: 0 };
+
 export default function AdminCommentsPage() {
   const { push } = useToast();
   const [filter, setFilter] = useState<Filter>('pending');
   const [rows, setRows] = useState<CommentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState<Record<Filter, number>>(emptyCounts);
+
+  const refreshCounts = async () => {
+    const c = await comments.countByModerationStatus();
+    setCounts({
+      pending: c.pending,
+      approved: c.approved,
+      rejected: c.rejected,
+      spam: c.spam,
+      all: c.all,
+    });
+  };
 
   const reload = async (status: Filter = filter) => {
     setLoading(true);
     const res = await comments.listAllForModeration(status, 300);
     setRows(res.data);
     setLoading(false);
+    await refreshCounts();
   };
+
+  useEffect(() => {
+    void refreshCounts();
+  }, []);
 
   useEffect(() => {
     reload(filter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
-
-  const counts = useMemo(() => {
-    const map: Record<Filter, number> = { pending: 0, approved: 0, rejected: 0, spam: 0, all: 0 };
-    if (filter === 'all') map.all = rows.length;
-    return map;
-  }, [rows, filter]);
 
   const moderate = async (id: string, status: ModerationStatus) => {
     await comments.moderate(id, status);

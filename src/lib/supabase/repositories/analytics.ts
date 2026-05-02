@@ -1,4 +1,6 @@
-import { supabase } from '../client';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getSupabase } from '../db';
+import * as viewsRepo from './views';
 import type { ArticleWithRelations, DashboardStatsRow } from '../types';
 
 const ARTICLE_SELECT = `
@@ -16,10 +18,16 @@ function flatten(row: Record<string, unknown>): ArticleWithRelations {
   return { ...(rest as ArticleWithRelations), tags } as ArticleWithRelations;
 }
 
-export async function getDashboardStats() {
-  // Read the singleton settings row (chart series, today's views, traffic
-  // sources) AND derive article counts in parallel from the live articles
-  // table so the dashboard never disagrees with /admin/posts.
+function clientOrDefault(sb?: SupabaseClient): SupabaseClient {
+  return sb ?? getSupabase();
+}
+
+/**
+ * Dashboard KPIs. Pass `sb` from `createSupabaseServer()` in admin RSC routes so
+ * `page_views` aggregates respect authenticated staff RLS.
+ */
+export async function getDashboardStats(sb?: SupabaseClient) {
+  const supabase = clientOrDefault(sb);
   const [
     settingsRes,
     publishedRes,
@@ -27,6 +35,9 @@ export async function getDashboardStats() {
     pendingRes,
     translationPendingRes,
     seoIssuesRes,
+    rollingRes,
+    weeklyLive,
+    trafficLive,
   ] = await Promise.all([
     supabase.from('dashboard_stats').select('*').eq('id', 'stats').maybeSingle(),
     supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'published'),
@@ -37,6 +48,9 @@ export async function getDashboardStats() {
       .select('id', { count: 'exact', head: true })
       .neq('translation_status', 'complete'),
     supabase.from('articles').select('id', { count: 'exact', head: true }).lt('seo_score', 70),
+    viewsRepo.getRollingTotals(supabase),
+    viewsRepo.getLastSevenUtcDayViewCounts(supabase),
+    viewsRepo.getTrafficSourceMix(supabase),
   ]);
 
   const seeded = (settingsRes.data as DashboardStatsRow | null) ?? fallback();
@@ -47,11 +61,15 @@ export async function getDashboardStats() {
     pending_review: pendingRes.count ?? 0,
     translation_pending: translationPendingRes.count ?? 0,
     seo_issues: seoIssuesRes.count ?? 0,
+    today_views: rollingRes.data.today,
+    weekly_views: weeklyLive,
+    traffic_sources: trafficLive.length > 0 ? trafficLive : seeded.traffic_sources,
   };
   return { data: merged, error: settingsRes.error };
 }
 
-export async function getTopArticles(limit = 5) {
+export async function getTopArticles(limit = 5, sb?: SupabaseClient) {
+  const supabase = clientOrDefault(sb);
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_SELECT)
@@ -64,7 +82,8 @@ export async function getTopArticles(limit = 5) {
   };
 }
 
-export async function getTotals() {
+export async function getTotals(sb?: SupabaseClient) {
+  const supabase = clientOrDefault(sb);
   const [{ count: published }, { count: drafts }, { count: pending }] = await Promise.all([
     supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'published'),
     supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'draft'),

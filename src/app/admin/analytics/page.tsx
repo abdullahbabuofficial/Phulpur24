@@ -5,10 +5,9 @@ import { Card, CardHeader } from '@/components/admin/ui/Card';
 import { Icon } from '@/components/admin/ui/Icon';
 import { Badge } from '@/components/admin/ui/Badge';
 import { analytics } from '@/lib/supabase';
+import { createSupabaseServer } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
-
-const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const sourceColors: Record<string, string> = {
   Direct: 'bg-accent',
@@ -18,21 +17,43 @@ const sourceColors: Record<string, string> = {
   Other: 'bg-line',
 };
 
+function utcWeekLabels(): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    out.push(
+      d.toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      })
+    );
+  }
+  return out;
+}
+
 export default async function AnalyticsPage() {
-  const stats = await analytics.getDashboardStats();
-  const top = await analytics.getTopArticles(8);
-  const totals = await analytics.getTotals();
+  const sb = await createSupabaseServer();
+  const [stats, top, totals] = await Promise.all([
+    analytics.getDashboardStats(sb),
+    analytics.getTopArticles(8, sb),
+    analytics.getTotals(sb),
+  ]);
 
   const dashboardStats = stats.data!;
-  const peak = Math.max(...dashboardStats.weekly_views);
+  const peak = Math.max(1, ...dashboardStats.weekly_views);
+  const weekLabels = utcWeekLabels();
   const articles = top.data ?? [];
   const totalViews = articles.reduce((s, a) => s + a.views, 0) || 1;
+  const weekPageViews = dashboardStats.weekly_views.reduce((s, x) => s + x, 0);
 
   return (
     <AdminPageShell title="Analytics">
       <PageHeader
         title="Analytics"
-        description="Traffic, performance, and the top stories driving readership."
+        description="Traffic from page_views and article totals — no fabricated KPIs."
         crumbs={[{ label: 'Console', href: '/admin/dashboard' }, { label: 'Analytics' }]}
       />
 
@@ -40,36 +61,39 @@ export default async function AnalyticsPage() {
         <StatTile
           label="Today’s views"
           value={dashboardStats.today_views}
-          delta={{ value: '8.3%', positive: true }}
+          hint="UTC midnight → now"
           icon={<Icon.Eye size={18} />}
           tone="accent"
         />
         <StatTile
-          label="This week"
-          value={dashboardStats.weekly_views.reduce((s, x) => s + x, 0) * 100}
-          delta={{ value: '12.1%', positive: true }}
+          label="Last 7 days"
+          value={weekPageViews}
+          hint="Sum of daily buckets"
           icon={<Icon.BarChart size={18} />}
           tone="success"
         />
         <StatTile
-          label="Total views"
+          label="Total article views"
           value={(totals.data?.totalViews ?? 0).toLocaleString()}
+          hint="Sum of articles.views"
           icon={<Icon.Activity size={18} />}
           tone="info"
         />
         <StatTile
-          label="Bounce rate"
-          value="42.3%"
-          delta={{ value: '3.2%', positive: true }}
-          icon={<Icon.ArrowDown size={18} />}
-          tone="warning"
-          hint="Lower is better"
+          label="Published posts"
+          value={dashboardStats.published_posts}
+          hint="Live in CMS"
+          icon={<Icon.Posts size={18} />}
+          tone="neutral"
         />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2" padded>
-          <CardHeader title="Weekly page views" subtitle="Hundreds of pageviews · last 7 days" />
+          <CardHeader
+            title="Weekly page views"
+            subtitle="Seven UTC days · oldest → newest (from page_views)"
+          />
           <div className="mt-6 flex h-56 items-end gap-3">
             {dashboardStats.weekly_views.map((val, i) => {
               const pct = Math.max(8, Math.round((val / peak) * 100));
@@ -80,9 +104,10 @@ export default async function AnalyticsPage() {
                     <div
                       className="absolute bottom-0 left-0 right-0 rounded-md bg-gradient-to-t from-accent to-indigo-400"
                       style={{ height: `${pct}%` }}
+                      title={`${val.toLocaleString()} views`}
                     />
                   </div>
-                  <span className="text-[11px] text-ink-muted">{days[i]}</span>
+                  <span className="text-center text-[10px] leading-tight text-ink-muted">{weekLabels[i]}</span>
                 </div>
               );
             })}
@@ -90,23 +115,27 @@ export default async function AnalyticsPage() {
         </Card>
 
         <Card padded>
-          <CardHeader title="Traffic sources" />
-          <ul className="mt-4 space-y-3">
-            {dashboardStats.traffic_sources.map((s) => (
-              <li key={s.source}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="text-ink">{s.source}</span>
-                  <span className="font-medium text-ink-muted">{s.pct}%</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-app">
-                  <div
-                    className={`h-full rounded-full ${sourceColors[s.source] ?? 'bg-line'}`}
-                    style={{ width: `${s.pct}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+          <CardHeader title="Traffic sources" subtitle="Referrers · last 7 days" />
+          {dashboardStats.traffic_sources.length === 0 ? (
+            <p className="mt-4 text-sm text-ink-muted">No referrer data yet — traffic defaults to Direct.</p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {dashboardStats.traffic_sources.map((s) => (
+                <li key={s.source}>
+                  <div className="mb-1 flex items-center justify-between text-sm">
+                    <span className="text-ink">{s.source}</span>
+                    <span className="font-medium text-ink-muted">{s.pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-app">
+                    <div
+                      className={`h-full rounded-full ${sourceColors[s.source] ?? 'bg-line'}`}
+                      style={{ width: `${s.pct}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 

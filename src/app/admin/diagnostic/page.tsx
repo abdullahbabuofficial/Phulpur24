@@ -78,8 +78,11 @@ async function runProbes(): Promise<Probe[]> {
     };
   });
 
-  await probe('posts.getPostById(art1)', 'Single post + nested category/author/tags', async () => {
-    const r = await postsRepo.getPostById('art1');
+  await probe('posts.getPostById(sample)', 'Single post + nested category/author/tags', async () => {
+    const list = await postsRepo.listPosts({ pageSize: 1, status: 'published' });
+    const id = list.rows[0]?.id;
+    if (!id) return { ok: false, detail: 'No published posts to sample' };
+    const r = await postsRepo.getPostById(id);
     if (r.error || !r.data) return { ok: false, detail: r.error?.message ?? 'not found' };
     return {
       ok: Boolean(r.data.category && r.data.author && Array.isArray(r.data.tags)),
