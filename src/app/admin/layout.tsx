@@ -1,4 +1,5 @@
 import AdminAuthGate from '@/components/admin/AdminAuthGate';
+import { AdminWorkspaceProvider } from '@/components/admin/AdminWorkspaceContext';
 import { ToastProvider } from '@/components/admin/ui/Toast';
 
 export default function AdminLayout({
@@ -8,7 +9,9 @@ export default function AdminLayout({
 }>) {
   return (
     <AdminAuthGate>
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        <AdminWorkspaceProvider>{children}</AdminWorkspaceProvider>
+      </ToastProvider>
     </AdminAuthGate>
   );
 }

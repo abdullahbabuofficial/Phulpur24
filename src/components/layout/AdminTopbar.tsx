@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAdminWorkspace } from '@/components/admin/AdminWorkspaceContext';
 import { clearAdminSession } from '@/components/admin/adminAuth';
+import { canAccessAdminPath, staffRoleLabel } from '@/lib/admin-rbac';
 import { Avatar } from '@/components/admin/ui/Avatar';
 import { Icon } from '@/components/admin/ui/Icon';
 import SearchModal from '@/components/common/SearchModal';
@@ -59,6 +61,15 @@ export default function AdminTopbar({
   userName = 'Admin',
 }: AdminTopbarProps) {
   const router = useRouter();
+  const { role } = useAdminWorkspace();
+  const visibleNotifications = useMemo(
+    () =>
+      seedNotifications.filter(
+        (n) => !n.href || canAccessAdminPath(role, n.href)
+      ),
+    [role]
+  );
+  const canOpenSettings = canAccessAdminPath(role, '/admin/settings');
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -177,7 +188,12 @@ export default function AdminTopbar({
                 <button className="text-xs text-accent hover:underline">Mark all as read</button>
               </div>
               <ul className="max-h-80 overflow-y-auto divide-y divide-line">
-                {seedNotifications.map((n) => (
+                {visibleNotifications.length === 0 ? (
+                  <li className="px-4 py-6 text-center text-xs text-ink-muted">
+                    No shortcuts for your role.
+                  </li>
+                ) : null}
+                {visibleNotifications.map((n) => (
                   <li key={n.id}>
                     <Link
                       href={n.href ?? '#'}
@@ -237,18 +253,23 @@ export default function AdminTopbar({
               <div className="border-b border-line px-4 py-3">
                 <p className="text-sm font-semibold text-ink">{userName}</p>
                 <p className="truncate text-xs text-ink-muted">{userEmail}</p>
+                <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+                  {staffRoleLabel(role)}
+                </p>
               </div>
               <ul className="py-1.5 text-sm">
-                <li>
-                  <Link
-                    href="/admin/settings"
-                    onClick={() => setUserOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2 text-ink hover:bg-app"
-                  >
-                    <Icon.Settings size={14} />
-                    Settings
-                  </Link>
-                </li>
+                {canOpenSettings ? (
+                  <li>
+                    <Link
+                      href="/admin/settings"
+                      onClick={() => setUserOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-ink hover:bg-app"
+                    >
+                      <Icon.Settings size={14} />
+                      Settings
+                    </Link>
+                  </li>
+                ) : null}
                 <li>
                   <Link
                     href={`/${defaultLang}`}

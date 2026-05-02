@@ -64,6 +64,14 @@ Protects every page under `/admin/*` except `/admin/login`. The gate:
 2. Asynchronously verifies the cached session against `supabase.auth.getSession()` (backed by cookies when using the browser client). A stale `localStorage` display snapshot alone is not enough — Supabase must agree the access token is still alive.
 3. Subscribes to `supabase.auth.onAuthStateChange`, so a sign-out in another tab or a server-side token revocation kicks every open admin tab to the login screen within milliseconds.
 
+### Staff roles in the admin shell (UX + edge redirect)
+
+Edge middleware runs the same `canAccessAdminPath` rules for authenticated users on `/admin/*` (except `/admin/login`): it reads `profiles.role` with the cookie-bound Supabase client and **307-redirects** to `/admin/dashboard` before the page RSC runs, so disallowed deep links do not flash forbidden UI. When Supabase env is missing or the user has no session, this step is skipped (the client `AdminAuthGate` / workspace provider still apply).
+
+After sign-in, `AdminWorkspaceProvider` loads `profiles.role` again for the sidebar, notification shortcuts, and settings entry.
+
+**Postgres RLS and server APIs remain authoritative.** These layers reduce clutter and casual browsing; they do not replace policies on `profiles`, articles, or admin routes.
+
 ## Layer 5 — Sign-in (`adminAuth.ts`)
 
 - Real auth goes through `supabase.auth.signInWithPassword`.

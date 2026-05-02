@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { canAccessAdminPath } from '@/lib/admin-rbac';
 import {
   forwardAuthCookies,
   updateSupabaseSession,
 } from '@/lib/supabase/middleware-session';
+import type { ProfileRow } from '@/lib/supabase/types';
 
 /**
  * Phulpur24 edge middleware.
@@ -41,6 +43,12 @@ import {
  * NOTE: This runs on the edge before any Next.js handler. Auth itself is
  * still verified by the AdminAuthGate (which calls Supabase). Combine with
  * Supabase Row-Level Security on the database to make access truly safe.
+ *
+ *  5. Admin HTML RBAC — for `/admin/*` except `/admin/login`, when the user
+ *     has a valid session, middleware loads `profiles.role` and redirects to
+ *     `/admin/dashboard` if `canAccessAdminPath` fails (same rules as
+ *     `AdminWorkspaceProvider`). Unauthenticated visitors are unchanged here;
+ *     the client gate still sends them to login.
  */
 
 const ADMIN_PREFIX = '/admin';
@@ -140,7 +148,7 @@ function redirectPublicAwayFromAdminHost(
 }
 
 export async function middleware(request: NextRequest) {
-  const sessionResponse = await updateSupabaseSession(request);
+  const { response: sessionResponse, supabase } = await updateSupabaseSession(request);
   const { pathname } = request.nextUrl;
   const isAdmin = isAdminPath(pathname);
 
@@ -154,13 +162,41 @@ export async function middleware(request: NextRequest) {
     return redirectPublicAwayFromAdminHost(request, sessionResponse);
   }
 
-  // 3. Strict security headers on admin (admin paths get extra protection
+  // 3. Role-based redirects for admin app pages (not /api/*).
+  const isAdminAppRoute =
+    !!supabase &&
+    pathname !== '/admin/login' &&
+    (pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`));
+
+  if (isAdminAppRoute) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      const row = profile as { role?: ProfileRow['role'] } | null;
+      const role = row?.role ?? null;
+
+      if (!canAccessAdminPath(role, pathname)) {
+        const res = NextResponse.redirect(new URL('/admin/dashboard', request.url));
+        forwardAuthCookies(sessionResponse, res);
+        return stripDebugHeaders(applyAdminSecurityHeaders(res));
+      }
+    }
+  }
+
+  // 4. Strict security headers on admin (admin paths get extra protection
   // on top of the baseline headers from next.config.mjs).
   if (isAdmin) {
     return stripDebugHeaders(applyAdminSecurityHeaders(sessionResponse));
   }
 
-  // 4. Public paths: just remove the Vercel debug headers if we can.
+  // 5. Public paths: just remove the Vercel debug headers if we can.
   return stripDebugHeaders(sessionResponse);
 }
 

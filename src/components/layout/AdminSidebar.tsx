@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import { useAdminWorkspace } from '@/components/admin/AdminWorkspaceContext';
 import { clearAdminSession } from '@/components/admin/adminAuth';
+import { canAccessAdminPath, staffRoleLabel } from '@/lib/admin-rbac';
 import { Icon } from '@/components/admin/ui/Icon';
 import { Avatar } from '@/components/admin/ui/Avatar';
 
@@ -71,7 +73,20 @@ export default function AdminSidebar({
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const allItems = groups.flatMap((g) => g.items);
+  const { role } = useAdminWorkspace();
+
+  const visibleGroups = useMemo(
+    () =>
+      groups
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((item) => canAccessAdminPath(role, item.href)),
+        }))
+        .filter((g) => g.items.length > 0),
+    [role]
+  );
+
+  const allItems = visibleGroups.flatMap((g) => g.items);
 
   const activeHref =
     allItems
@@ -116,7 +131,7 @@ export default function AdminSidebar({
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-6">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.label}>
               <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">
                 {group.label}
@@ -180,6 +195,9 @@ export default function AdminSidebar({
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-semibold text-white">{userName}</p>
             <p className="truncate text-[10px] text-sidebar-muted">{userEmail}</p>
+            <p className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-sidebar-muted/80">
+              {staffRoleLabel(role)}
+            </p>
           </div>
           <button
             type="button"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAdminWorkspace } from '@/components/admin/AdminWorkspaceContext';
 import AdminSidebar from '@/components/layout/AdminSidebar';
 import AdminTopbar from '@/components/layout/AdminTopbar';
 import { getAdminSession } from '@/components/admin/adminAuth';
@@ -11,6 +12,7 @@ interface AdminPageShellProps {
 }
 
 export default function AdminPageShell({ title, children }: AdminPageShellProps) {
+  const { profile } = useAdminWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string }>({
     name: 'Admin',
@@ -18,11 +20,18 @@ export default function AdminPageShell({ title, children }: AdminPageShellProps)
   });
 
   useEffect(() => {
+    if (profile?.full_name || profile?.email) {
+      setUser({
+        name: profile.full_name?.trim() || profile.email || 'Staff',
+        email: profile.email || '',
+      });
+      return;
+    }
     const session = getAdminSession();
     if (session) {
       setUser({ name: session.name, email: session.email });
     }
-  }, []);
+  }, [profile]);
 
   // Lock body scroll when mobile drawer is open
   useEffect(() => {
