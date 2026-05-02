@@ -1,7 +1,62 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0, private',
+  'X-Robots-Tag': 'noindex, nofollow, noarchive',
+} as const;
+
+function unauthorized(reason: string) {
+  return NextResponse.json(
+    { ok: false, error: reason },
+    { status: 401, headers: NO_STORE_HEADERS }
+  );
+}
+
+/**
+ * Verify the caller is signed in to Supabase by checking the access token
+ * passed as `Authorization: Bearer <token>`. If Supabase env is missing or
+ * the token is invalid, return 401. This route would otherwise be open to
+ * the entire internet and would burn through the Anthropic key.
+ */
+async function requireAuthedUser(request: Request): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; response: NextResponse }
+> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { ok: false, response: unauthorized('Auth backend not configured.') };
+  }
+
+  const header = request.headers.get('authorization') ?? '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return { ok: false, response: unauthorized('Missing bearer token.') };
+  }
+
+  const token = match[1].trim();
+  if (!token) {
+    return { ok: false, response: unauthorized('Empty bearer token.') };
+  }
+
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await sb.auth.getUser(token);
+    if (error || !data.user) {
+      return { ok: false, response: unauthorized('Invalid or expired token.') };
+    }
+    return { ok: true, userId: data.user.id };
+  } catch {
+    return { ok: false, response: unauthorized('Could not verify token.') };
+  }
+}
 
 interface Body {
   topic?: string;
@@ -48,6 +103,9 @@ Local administration said relevant offices are working in coordination on the ma
 Residents hope the initiative will move quickly and bring direct benefits to the community.`;
 
 export async function POST(request: Request) {
+  const auth = await requireAuthedUser(request);
+  if (!auth.ok) return auth.response;
+
   let body: Body = {};
   try {
     body = (await request.json()) as Body;
@@ -60,7 +118,10 @@ export async function POST(request: Request) {
   const language = (body.language ?? 'bn') as 'bn' | 'en' | 'both';
 
   if (!topic) {
-    return NextResponse.json({ ok: false, error: 'Topic is required' }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: 'Topic is required' },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -85,7 +146,7 @@ export async function POST(request: Request) {
       if (!res.ok) {
         return NextResponse.json(
           { ok: false, error: `LLM ${res.status}: ${await res.text()}` },
-          { status: 502 }
+          { status: 502, headers: NO_STORE_HEADERS }
         );
       }
       const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
@@ -93,11 +154,14 @@ export async function POST(request: Request) {
         .map((p) => (p.type === 'text' ? p.text ?? '' : ''))
         .join('')
         .trim();
-      return NextResponse.json({ ok: true, mode: 'live', draft: text });
+      return NextResponse.json(
+        { ok: true, mode: 'live', draft: text },
+        { headers: NO_STORE_HEADERS }
+      );
     } catch (err) {
       return NextResponse.json(
         { ok: false, error: err instanceof Error ? err.message : 'Unknown error' },
-        { status: 500 }
+        { status: 500, headers: NO_STORE_HEADERS }
       );
     }
   }
@@ -110,5 +174,8 @@ export async function POST(request: Request) {
       ? cannedEn(topic, keywords, tone)
       : `${cannedBn(topic, keywords, tone)}\n\n---\n\n${cannedEn(topic, keywords, tone)}`;
 
-  return NextResponse.json({ ok: true, mode: 'fallback', draft });
+  return NextResponse.json(
+    { ok: true, mode: 'fallback', draft },
+    { headers: NO_STORE_HEADERS }
+  );
 }

@@ -3,19 +3,25 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { hasAdminSession, signIn } from '@/components/admin/adminAuth';
+import { adminAuthMode, hasAdminSession, signIn } from '@/components/admin/adminAuth';
 import { Button } from '@/components/admin/ui/Button';
 import { Input } from '@/components/admin/ui/Input';
 import { Icon } from '@/components/admin/ui/Icon';
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 60_000;
+
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@phulpur24.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     if (hasAdminSession()) {
@@ -23,9 +29,22 @@ export default function AdminLoginPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const id = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [lockedUntil]);
+
+  const isLocked = lockedUntil !== null && now < lockedUntil;
+  const secondsLeft = isLocked ? Math.ceil(((lockedUntil ?? 0) - now) / 1000) : 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (isLocked) {
+      setError(`Too many attempts. Try again in ${secondsLeft}s.`);
+      return;
+    }
     if (!email.trim() || !password.trim()) {
       setError('Email and password are required.');
       return;
@@ -35,9 +54,20 @@ export default function AdminLoginPage() {
     const res = await signIn(email.trim(), password, remember);
     setLoading(false);
     if (res.error) {
-      setError(res.error.message);
+      const nextAttempts = attempts + 1;
+      setAttempts(nextAttempts);
+      if (nextAttempts >= MAX_ATTEMPTS) {
+        const until = Date.now() + LOCKOUT_MS;
+        setLockedUntil(until);
+        setNow(Date.now());
+        setError(`Too many failed attempts. Locked for ${Math.ceil(LOCKOUT_MS / 1000)}s.`);
+      } else {
+        setError(res.error.message);
+      }
       return;
     }
+    setAttempts(0);
+    setLockedUntil(null);
     const next = new URLSearchParams(window.location.search).get('next') || '/admin/dashboard';
     router.replace(next.startsWith('/admin') ? next : '/admin/dashboard');
   };
@@ -105,9 +135,11 @@ export default function AdminLoginPage() {
             <p className="mt-1 text-sm text-ink-muted">
               Enter your credentials to access the admin console.
             </p>
-            <p className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-warning/20 bg-warning-soft px-2 py-1 text-[11px] font-medium text-warning-text">
-              <Icon.Info size={12} /> Real password is <code className="font-mono">phulpur24</code>; any other still works in demo mode.
-            </p>
+            {adminAuthMode === 'live+demo' ? (
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-warning/20 bg-warning-soft px-2 py-1 text-[11px] font-medium text-warning-text">
+                <Icon.Info size={12} /> Demo mode is enabled in this build. Disable it before deploying.
+              </p>
+            ) : null}
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -166,8 +198,8 @@ export default function AdminLoginPage() {
               </a>
             </div>
 
-            <Button type="submit" loading={loading} fullWidth size="lg">
-              Sign in to console
+            <Button type="submit" loading={loading} disabled={isLocked} fullWidth size="lg">
+              {isLocked ? `Locked · retry in ${secondsLeft}s` : 'Sign in to console'}
             </Button>
           </form>
 

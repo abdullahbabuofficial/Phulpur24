@@ -4,6 +4,18 @@ import { supabase } from '@/lib/supabase/client';
 
 export const ADMIN_AUTH_KEY = 'phulpur24.admin.auth';
 
+/**
+ * Demo password fallback is OFF by default. It is ONLY enabled when both:
+ *   - NEXT_PUBLIC_ADMIN_ALLOW_DEMO === '1', AND
+ *   - the build is not a production build.
+ *
+ * This is a developer convenience for working without a Supabase user; it
+ * MUST stay off on every deployed environment.
+ */
+const DEMO_AUTH_ENABLED =
+  process.env.NEXT_PUBLIC_ADMIN_ALLOW_DEMO === '1' &&
+  process.env.NODE_ENV !== 'production';
+
 export interface AdminSession {
   email: string;
   name: string;
@@ -12,6 +24,8 @@ export interface AdminSession {
   /** 'supabase' = real auth.users session, 'demo' = local mock fallback. */
   source?: 'supabase' | 'demo';
 }
+
+export const adminAuthMode: 'live' | 'live+demo' = DEMO_AUTH_ENABLED ? 'live+demo' : 'live';
 
 const isBrowser = () => typeof window !== 'undefined';
 
@@ -58,10 +72,16 @@ export function hasAdminSession() {
 }
 
 /**
- * Sign in. Tries real Supabase Auth first. If that fails AND the user typed
- * a non-empty password, we still let them in via a "demo" session so the
- * mock seeded environment works out of the box. Once auth is locked down
- * for production you'd remove the demo fallback.
+ * Sign in via Supabase Auth.
+ *
+ * - In production (or any deploy without `NEXT_PUBLIC_ADMIN_ALLOW_DEMO=1`),
+ *   ONLY a real Supabase user with the correct password gets in. Any error,
+ *   including network errors, surfaces to the user — we never silently
+ *   accept a guess.
+ * - In a dev build with the demo flag on, after Supabase explicitly rejects
+ *   credentials the function falls back to a local "demo" session so devs
+ *   can work without seeding auth.users. This branch is unreachable in
+ *   production.
  */
 export async function signIn(
   email: string,
@@ -78,6 +98,7 @@ export async function signIn(
       email: trimmedEmail,
       password,
     });
+
     if (!error && data.user) {
       const meta = (data.user.user_metadata ?? {}) as { full_name?: string; role?: string };
       const session: AdminSession = {
@@ -90,27 +111,76 @@ export async function signIn(
       writeLocalSession(session, remember);
       return { data: session, error: null };
     }
-  } catch {
-    /* fall through to demo */
-  }
 
-  // Demo fallback (only when password non-empty)
-  const session: AdminSession = {
-    email: trimmedEmail,
-    name: 'Admin',
-    remember,
-    signedInAt: new Date().toISOString(),
-    source: 'demo',
-  };
-  writeLocalSession(session, remember);
-  return { data: session, error: null };
+    if (DEMO_AUTH_ENABLED) {
+      const session: AdminSession = {
+        email: trimmedEmail,
+        name: 'Admin (demo)',
+        remember,
+        signedInAt: new Date().toISOString(),
+        source: 'demo',
+      };
+      writeLocalSession(session, remember);
+      return { data: session, error: null };
+    }
+
+    return {
+      data: null,
+      error: { message: error?.message ?? 'Invalid email or password.' },
+    };
+  } catch (err) {
+    // Network / unexpected error. Do NOT silently log the user in.
+    return {
+      data: null,
+      error: {
+        message:
+          err instanceof Error
+            ? `Sign-in failed: ${err.message}`
+            : 'Sign-in failed. Please try again.',
+      },
+    };
+  }
 }
 
-/** @deprecated kept for backward compat with older callsites; prefer `signIn`. */
+/**
+ * Cross-check that there is still a live Supabase session for sessions
+ * marked `source: 'supabase'`. A stale localStorage entry alone is NOT
+ * enough — if Supabase says the access token is gone or invalid, we
+ * forcibly clear and report no session.
+ *
+ * Demo sessions (only possible in dev with the env flag) are accepted
+ * without re-checking Supabase.
+ */
+export async function verifyAdminSession(): Promise<AdminSession | null> {
+  const local = getAdminSession();
+  if (!local) return null;
+
+  if (local.source === 'demo') {
+    return DEMO_AUTH_ENABLED ? local : (clearLocalSession(), null);
+  }
+
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.user) {
+      clearLocalSession();
+      return null;
+    }
+    return local;
+  } catch {
+    clearLocalSession();
+    return null;
+  }
+}
+
+/**
+ * @deprecated Demo-only escape hatch. Disabled outside of dev + demo flag.
+ * Real sign-in must go through `signIn`.
+ */
 export function setAdminSession(email: string, remember: boolean) {
+  if (!DEMO_AUTH_ENABLED) return;
   const session: AdminSession = {
     email: email.trim(),
-    name: 'Admin',
+    name: 'Admin (demo)',
     remember,
     signedInAt: new Date().toISOString(),
     source: 'demo',

@@ -79,7 +79,6 @@ export default function Footer({ lang, categories = [] }: FooterProps) {
                 { label: isBn ? 'আমাদের সম্পর্কে' : 'About Us', href: `/${lang}/about` },
                 { label: isBn ? 'যোগাযোগ' : 'Contact', href: `/${lang}/contact` },
                 { label: isBn ? 'অনুসন্ধান' : 'Search', href: `/search?lang=${lang}` },
-                { label: 'Admin', href: '/admin/dashboard' },
               ].map((link) => (
                 <li key={link.href}>
                   <Link href={link.href} className={`hover:text-primary transition-colors ${isBn ? 'font-bangla' : ''}`}>

@@ -9,6 +9,7 @@ import { Input } from '@/components/admin/ui/Input';
 import { Button } from '@/components/admin/ui/Button';
 import { Icon } from '@/components/admin/ui/Icon';
 import { useToast } from '@/components/admin/ui/Toast';
+import { supabase } from '@/lib/supabase/client';
 
 type LanguageMode = 'bn' | 'en' | 'both';
 const tones = ['Neutral', 'Formal', 'Casual', 'Informative', 'Persuasive'] as const;
@@ -73,9 +74,17 @@ export default function AIWriterPage() {
     if (!topic.trim()) return;
     setLoading(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
       const res = await fetch('/api/ai/draft', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ topic: topic.trim(), keywords: keywords.trim(), tone, language: lang }),
       });
       const json = (await res.json()) as { ok: boolean; draft?: string; mode?: string; error?: string };
