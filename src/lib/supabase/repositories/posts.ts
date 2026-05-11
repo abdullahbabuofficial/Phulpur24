@@ -7,12 +7,16 @@ import type {
   TranslationStatus,
 } from '../types';
 
-const ARTICLE_SELECT = `
-  *,
-  category:categories(*),
-  author:authors(*),
-  article_tags(tag:tags(*))
-`;
+const ARTICLE_LIST_COLUMNS =
+  'id,slug,title_bn,title_en,subtitle_bn,subtitle_en,category_id,author_id,cover_image_url,cover_image_caption,reading_time_bn,reading_time_en,views,status,translation_status,seo_score,seo_title,seo_description,seo_focus_keyword,featured,breaking,published_at,updated_at,created_at';
+
+const ARTICLE_CONTENT_COLUMNS = 'body_bn,body_en';
+
+const ARTICLE_RELATION_COLUMNS =
+  'category:categories(id,slug,name_bn,name_en,color,sort_order,created_at),author:authors(id,name_bn,name_en,role,avatar_url,bio,created_at),article_tags(tag:tags(id,slug,name_bn,name_en,created_at))';
+
+const ARTICLE_SELECT_LIST = `${ARTICLE_LIST_COLUMNS},${ARTICLE_RELATION_COLUMNS}`;
+const ARTICLE_SELECT_WITH_CONTENT = `${ARTICLE_LIST_COLUMNS},${ARTICLE_CONTENT_COLUMNS},${ARTICLE_RELATION_COLUMNS}`;
 
 // Flatten the article_tags join into a `tags` array so the public
 // shape matches our ArticleWithRelations type.
@@ -21,7 +25,12 @@ function flatten(row: Record<string, unknown>): ArticleWithRelations {
   const tags = joins.map((j) => j.tag);
   const { article_tags, ...rest } = row as { article_tags?: unknown };
   void article_tags;
-  return { ...(rest as ArticleWithRelations), tags } as ArticleWithRelations;
+  // List views can intentionally skip large HTML fields. Keep the return
+  // shape stable so callers don't need nullable checks for body fields.
+  const normalized = rest as Partial<ArticleWithRelations>;
+  if (typeof normalized.body_bn !== 'string') normalized.body_bn = '';
+  if (typeof normalized.body_en !== 'string') normalized.body_en = '';
+  return { ...(normalized as ArticleWithRelations), tags } as ArticleWithRelations;
 }
 
 export interface ListPostsParams {
@@ -32,6 +41,7 @@ export interface ListPostsParams {
   page?: number;
   pageSize?: number;
   sort?: 'newest' | 'oldest' | 'most-views' | 'best-seo';
+  includeContent?: boolean;
 }
 
 export interface ListPostsResult {
@@ -51,9 +61,11 @@ export async function listPosts(params: ListPostsParams = {}): Promise<ListPosts
     page = 1,
     pageSize = 10,
     sort = 'newest',
+    includeContent = false,
   } = params;
 
-  let query = supabase.from('articles').select(ARTICLE_SELECT, { count: 'exact' });
+  const articleSelect = includeContent ? ARTICLE_SELECT_WITH_CONTENT : ARTICLE_SELECT_LIST;
+  let query = supabase.from('articles').select(articleSelect as '*', { count: 'exact' });
 
   if (status !== 'all') query = query.eq('status', status);
   if (categoryId !== 'all') query = query.eq('category_id', categoryId);
@@ -99,7 +111,7 @@ export async function listPosts(params: ListPostsParams = {}): Promise<ListPosts
 export async function getPostById(id: string) {
   const { data, error } = await supabase
     .from('articles')
-    .select(ARTICLE_SELECT)
+    .select(ARTICLE_SELECT_WITH_CONTENT as '*')
     .eq('id', id)
     .maybeSingle();
   return { data: data ? flatten(data as Record<string, unknown>) : null, error };
@@ -108,7 +120,7 @@ export async function getPostById(id: string) {
 export async function getPostBySlug(slug: string) {
   const { data, error } = await supabase
     .from('articles')
-    .select(ARTICLE_SELECT)
+    .select(ARTICLE_SELECT_WITH_CONTENT as '*')
     .eq('slug', slug)
     .maybeSingle();
   return { data: data ? flatten(data as Record<string, unknown>) : null, error };
@@ -117,7 +129,7 @@ export async function getPostBySlug(slug: string) {
 export async function topPosts(limit = 5) {
   const { data, error } = await supabase
     .from('articles')
-    .select(ARTICLE_SELECT)
+    .select(ARTICLE_SELECT_LIST as '*')
     .eq('status', 'published')
     .order('views', { ascending: false })
     .limit(limit);

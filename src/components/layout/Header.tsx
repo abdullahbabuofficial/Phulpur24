@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -12,6 +12,44 @@ interface HeaderProps {
   lang: Lang;
 }
 
+function isValidExternalUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getConfiguredLogo(config: unknown, fallbackName: string): { src: string; alt: string } | null {
+  const root = config as Record<string, unknown>;
+  const branding = (root.branding ?? {}) as Record<string, unknown>;
+  const logo = (root.logo ?? {}) as Record<string, unknown>;
+  const candidateSrc = [
+    branding.logoUrl,
+    branding.logo_url,
+    root.logoUrl,
+    root.logo_url,
+    logo.url,
+  ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+
+  if (!isValidExternalUrl(candidateSrc)) return null;
+
+  const candidateAlt = [
+    branding.logoAlt,
+    branding.logo_alt,
+    root.logoAlt,
+    root.logo_alt,
+    logo.alt,
+  ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+
+  return {
+    src: candidateSrc.trim(),
+    alt: candidateAlt?.trim() || `${fallbackName} logo`,
+  };
+}
+
 export default function Header({ lang }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const { config } = useSiteConfig();
@@ -23,8 +61,9 @@ export default function Header({ lang }: HeaderProps) {
     day: 'numeric',
     timeZone: 'Asia/Dhaka',
   }).format(new Date());
+
   const oppLang = lang === 'bn' ? 'en' : 'bn';
-  const oppLabel = lang === 'bn' ? 'EN' : 'বাং';
+  const oppLabel = lang === 'bn' ? 'EN' : 'বাংলা';
   const searchLabel = lang === 'bn' ? 'অনুসন্ধান খুলুন' : 'Open search';
   const adLabel = lang === 'bn' ? 'বিজ্ঞাপন · 728×90' : 'Advertisement · 728×90';
 
@@ -38,20 +77,21 @@ export default function Header({ lang }: HeaderProps) {
   const socialItems = useMemo(() => {
     const entries: { href: string; label: string; kind: SocialKind }[] = [];
     const { facebook, twitter, youtube, instagram } = config.social;
-    if (facebook?.trim()) entries.push({ href: facebook.trim(), label: 'Facebook', kind: 'facebook' });
-    if (twitter?.trim()) entries.push({ href: twitter.trim(), label: 'Twitter', kind: 'twitter' });
-    if (youtube?.trim()) entries.push({ href: youtube.trim(), label: 'YouTube', kind: 'youtube' });
-    if (instagram?.trim()) entries.push({ href: instagram.trim(), label: 'Instagram', kind: 'instagram' });
+    if (isValidExternalUrl(facebook)) entries.push({ href: facebook.trim(), label: 'Facebook', kind: 'facebook' });
+    if (isValidExternalUrl(twitter)) entries.push({ href: twitter.trim(), label: 'Twitter', kind: 'twitter' });
+    if (isValidExternalUrl(youtube)) entries.push({ href: youtube.trim(), label: 'YouTube', kind: 'youtube' });
+    if (isValidExternalUrl(instagram)) entries.push({ href: instagram.trim(), label: 'Instagram', kind: 'instagram' });
     return entries;
   }, [config.social]);
 
   const brandName = config.siteName.trim() || 'Phulpur24';
+  const logo = getConfiguredLogo(config, brandName);
 
   return (
     <>
-      <div className="bg-brand-text text-white text-xs py-1.5">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
-          <span className={lang === 'bn' ? 'font-bangla' : ''}>{date}</span>
+      <div className="bg-brand-text py-1.5 text-xs text-white">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-y-1 px-4">
+          <span className={`max-w-[58vw] truncate ${lang === 'bn' ? 'font-bangla' : ''} sm:max-w-none`}>{date}</span>
           <div className="flex items-center gap-3">
             {socialItems.map((item) => (
               <a
@@ -60,15 +100,15 @@ export default function Header({ lang }: HeaderProps) {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={item.label}
-                className="hover:text-primary transition-colors"
+                className="transition-colors hover:text-primary"
               >
                 {item.kind === 'youtube' ? (
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M22.54 6.42a2.78 2.78 0 00-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 00-1.95 1.96A29 29 0 001 12a29 29 0 00.46 5.58A2.78 2.78 0 003.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.4a2.78 2.78 0 001.95-1.95A29 29 0 0023 12a29 29 0 00-.46-5.58z" />
                     <polygon fill="white" points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" />
                   </svg>
                 ) : (
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
                     {item.kind === 'facebook' ? (
                       <path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z" />
                     ) : item.kind === 'twitter' ? (
@@ -80,54 +120,70 @@ export default function Header({ lang }: HeaderProps) {
                 )}
               </a>
             ))}
-            <div className="h-3 w-px bg-gray-600" />
-            <Link href={`/${oppLang}`} aria-label={lang === 'bn' ? 'Switch to English' : 'বাংলায় দেখুন'} className="font-medium hover:text-primary transition-colors tracking-wide">
+            {socialItems.length > 0 ? <div className="h-3 w-px bg-gray-600" /> : null}
+            <Link
+              href={`/${oppLang}`}
+              aria-label={lang === 'bn' ? 'Switch to English' : 'বাংলায় দেখুন'}
+              className="font-medium tracking-wide transition-colors hover:text-primary"
+            >
               {oppLabel}
             </Link>
           </div>
         </div>
       </div>
 
-      <header className="bg-white border-b border-brand-border shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <Link href={`/${lang}`} className="flex items-center gap-2 min-w-0">
-            <div
-              className="bg-primary text-white font-black text-base sm:text-lg px-2.5 sm:px-3 py-1.5 rounded tracking-tight leading-none shrink-0 max-w-[13rem] sm:max-w-[16rem] truncate"
-              title={brandName}
-            >
-              {brandName}
-            </div>
-            <div className="hidden sm:block min-w-0">
-              <p className={`text-xs text-brand-muted leading-tight truncate ${lang === 'bn' ? 'font-bangla' : ''}`}>{tagline}</p>
+      <header className="border-b border-brand-border bg-white shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+          <Link href={`/${lang}`} className="flex min-w-0 items-center gap-2">
+            {logo ? (
+              <div className="shrink-0 rounded-md border border-brand-border bg-white px-2 py-1">
+                <img
+                  src={logo.src}
+                  alt={logo.alt}
+                  className="h-9 w-auto max-w-[11rem] object-contain sm:h-11 sm:max-w-[14rem]"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
+            ) : (
+              <div
+                className="max-w-[13rem] shrink-0 truncate rounded bg-primary px-2.5 py-1.5 text-base font-black leading-none tracking-tight text-white sm:max-w-[16rem] sm:px-3 sm:text-lg"
+                title={brandName}
+              >
+                {brandName}
+              </div>
+            )}
+            <div className="hidden min-w-0 sm:block">
+              <p className={`truncate text-xs leading-tight text-brand-muted ${lang === 'bn' ? 'font-bangla' : ''}`}>{tagline}</p>
             </div>
           </Link>
 
           {config.features.enableAds ? (
-            <div className="hidden lg:flex items-center justify-center flex-1 px-4">
-              <div className="bg-gray-100 border border-dashed border-gray-300 rounded text-gray-400 text-xs px-8 py-3 max-w-xl w-full">
+            <div className="hidden flex-1 items-center justify-center px-4 lg:flex">
+              <div className="w-full max-w-xl rounded border border-dashed border-gray-300 bg-gray-100 px-8 py-3 text-xs text-gray-400">
                 <p className={lang === 'bn' ? 'font-bangla' : ''}>{adLabel}</p>
               </div>
             </div>
           ) : (
-            <div className="hidden lg:block flex-1" aria-hidden="true" />
+            <div className="hidden flex-1 lg:block" aria-hidden="true" />
           )}
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="p-2 text-brand-muted hover:text-primary transition-colors rounded-lg hover:bg-brand-soft"
+              className="rounded-lg p-2 text-brand-muted transition-colors hover:bg-brand-soft hover:text-primary"
               aria-label={searchLabel}
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </button>
             <Link
               href={`/${oppLang}`}
-              className="hidden sm:flex items-center gap-1 text-sm font-medium text-brand-muted hover:text-primary border border-brand-border rounded-lg px-3 py-1.5 transition-colors"
+              className="hidden items-center gap-1 rounded-lg border border-brand-border px-3 py-1.5 text-sm font-medium text-brand-muted transition-colors hover:text-primary sm:flex"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
               </svg>
               {oppLang === 'en' ? 'English' : 'বাংলা'}

@@ -11,10 +11,8 @@ import NewsletterSignup from '@/components/common/NewsletterSignup';
 import AdSlot from '@/components/common/AdSlot';
 import {
   getAllPublishedSlugs,
+  getArticlePageData,
   getArticleBySlug,
-  getCategories,
-  getPopularArticles,
-  getRelatedArticles,
 } from '@/lib/data';
 import { formatDate } from '@/lib/i18n';
 import { getPublicSiteConfig } from '@/lib/get-public-site-config';
@@ -27,20 +25,44 @@ interface Props {
 
 export const revalidate = 60;
 
+function normalizeTitleSuffix(suffix: string, siteName: string): string {
+  const trimmed = suffix.trim();
+  if (!trimmed) return ` | ${siteName}`;
+  if (trimmed.startsWith("|") || trimmed.startsWith("-")) return ` ${trimmed}`;
+  return ` | ${trimmed}`;
+}
+
 export async function generateStaticParams() {
   return getAllPublishedSlugs();
 }
 
 export async function generateMetadata({ params }: Props) {
   const { slug } = await params;
-  const a = await getArticleBySlug(slug);
-  if (!a) return { title: 'Phulpur24' };
+  const [a, config] = await Promise.all([getArticleBySlug(slug), getPublicSiteConfig()]);
+  const siteName = config.siteName.trim() || 'Phulpur24';
+  const titleSuffix = normalizeTitleSuffix(config.seo.metaTitleSuffix, siteName);
+  const fallbackDescription =
+    config.seo.metaDescription.trim() ||
+    config.descriptionEn.trim() ||
+    config.descriptionBn.trim() ||
+    siteName;
+
+  if (!a) {
+    return {
+      title: siteName,
+      description: fallbackDescription,
+    };
+  }
+
+  const description = a.subtitleEn?.trim() || fallbackDescription;
+
   return {
-    title: `${a.titleEn} | Phulpur24`,
-    description: a.subtitleEn,
+    title: `${a.titleEn}${titleSuffix}`,
+    description,
     openGraph: {
-      title: a.titleEn,
-      description: a.subtitleEn,
+      title: `${a.titleEn}${titleSuffix}`,
+      description,
+      siteName,
       type: 'article',
       images: a.image ? [{ url: a.image }] : undefined,
       locale: 'en_US',
@@ -50,15 +72,9 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function EnArticlePage({ params }: Props) {
   const { slug } = await params;
-  const article = await getArticleBySlug(slug);
+  const { article, related, popular, categories } = await getArticlePageData(slug);
   if (!article) notFound();
-
-  const [related, popular, categories, config] = await Promise.all([
-    getRelatedArticles(article, 4),
-    getPopularArticles(5),
-    getCategories(),
-    getPublicSiteConfig(),
-  ]);
+  const config = await getPublicSiteConfig();
   const date = formatDate(article.publishedAt, 'en');
 
   return (
@@ -114,7 +130,13 @@ export default async function EnArticlePage({ params }: Props) {
               </div>
 
               <div className="relative aspect-[16/9] overflow-hidden mx-6 mt-4 rounded-lg">
-                <img src={article.image} alt={article.titleEn} className="w-full h-full object-cover" />
+                {article.image?.trim() ? (
+                  <img src={article.image} alt={article.titleEn} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-app text-sm text-ink-faint">
+                    No image available
+                  </div>
+                )}
               </div>
               {article.imageCaption && (
                 <p className="px-6 mt-2 text-xs text-brand-muted text-center italic">{article.imageCaption}</p>

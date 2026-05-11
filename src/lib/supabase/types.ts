@@ -98,6 +98,17 @@ export interface MediaAssetRow {
   uploaded_by: string;
   uploaded_at: string;
   alt_text: string | null;
+  optimization_meta?: MediaOptimizationMeta | null;
+}
+
+export interface MediaOptimizationMeta {
+  optimized: boolean;
+  originalBytes: number;
+  uploadedBytes: number;
+  reductionPct: number;
+  originalType: string;
+  uploadedType: string;
+  reason?: string;
 }
 
 export interface AuditLogRow {
@@ -126,10 +137,16 @@ export interface SiteSettingsRow {
   site_name: string;
   site_url: string;
   default_language: Lang;
+  logo_url: string;
+  logo_dark_url: string;
+  logo_alt: string;
+  favicon_url: string;
   tagline_bn: string;
   tagline_en: string;
   description_bn: string;
   description_en: string;
+  meta_title_bn: string;
+  meta_title_en: string;
   meta_title_suffix: string;
   meta_description: string;
   enable_sitemap: boolean;

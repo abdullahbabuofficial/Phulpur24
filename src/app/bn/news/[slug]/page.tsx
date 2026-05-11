@@ -11,10 +11,8 @@ import NewsletterSignup from '@/components/common/NewsletterSignup';
 import AdSlot from '@/components/common/AdSlot';
 import {
   getAllPublishedSlugs,
+  getArticlePageData,
   getArticleBySlug,
-  getCategories,
-  getPopularArticles,
-  getRelatedArticles,
 } from '@/lib/data';
 import { formatDate } from '@/lib/i18n';
 import { getPublicSiteConfig } from '@/lib/get-public-site-config';
@@ -27,21 +25,57 @@ interface Props {
 
 export const revalidate = 60;
 
+function normalizeTitleSuffix(suffix: string, siteName: string): string {
+  const trimmed = suffix.trim();
+  if (!trimmed) return ` | ${siteName}`;
+  if (trimmed.startsWith('|') || trimmed.startsWith('-')) return ` ${trimmed}`;
+  return ` | ${trimmed}`;
+}
+
 export async function generateStaticParams() {
   return getAllPublishedSlugs();
 }
 
+export async function generateMetadata({ params }: Props) {
+  const { slug } = await params;
+  const [article, config] = await Promise.all([getArticleBySlug(slug), getPublicSiteConfig()]);
+  const siteName = config.siteName.trim() || 'Phulpur24';
+  const titleSuffix = normalizeTitleSuffix(config.seo.metaTitleSuffix, siteName);
+  const fallbackDescription =
+    config.seo.metaDescription.trim() ||
+    config.descriptionBn.trim() ||
+    config.descriptionEn.trim() ||
+    siteName;
+
+  if (!article) {
+    return {
+      title: siteName,
+      description: fallbackDescription,
+    };
+  }
+
+  const description = article.subtitleBn?.trim() || fallbackDescription;
+
+  return {
+    title: `${article.titleBn}${titleSuffix}`,
+    description,
+    openGraph: {
+      title: `${article.titleBn}${titleSuffix}`,
+      description,
+      siteName,
+      type: 'article',
+      images: article.image ? [{ url: article.image }] : undefined,
+      locale: 'bn_BD',
+    },
+  };
+}
+
 export default async function BnArticlePage({ params }: Props) {
   const { slug } = await params;
-  const article = await getArticleBySlug(slug);
+  const { article, related, popular, categories } = await getArticlePageData(slug);
   if (!article) notFound();
+  const config = await getPublicSiteConfig();
 
-  const [related, popular, categories, config] = await Promise.all([
-    getRelatedArticles(article, 4),
-    getPopularArticles(5),
-    getCategories(),
-    getPublicSiteConfig(),
-  ]);
   const date = formatDate(article.publishedAt, 'bn');
 
   return (
@@ -49,33 +83,35 @@ export default async function BnArticlePage({ params }: Props) {
       <Header lang="bn" />
       <Navigation lang="bn" categories={categories} />
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4">
-          <Breadcrumb items={[
-            { label: 'হোম', href: '/bn' },
-            { label: article.category.nameBn, href: `/bn/category/${article.category.slug}` },
-            { label: article.titleBn },
-          ]} />
+          <Breadcrumb
+            items={[
+              { label: 'হোম', href: '/bn' },
+              { label: article.category.nameBn, href: `/bn/category/${article.category.slug}` },
+              { label: article.titleBn },
+            ]}
+          />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           <article className="lg:col-span-2">
-            <div className="bg-white rounded-xl border border-brand-border overflow-hidden">
-              <div className="px-6 pt-6 flex items-center gap-2">
+            <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+              <div className="flex items-center gap-2 px-6 pt-6">
                 <Badge color={article.category.color}>{article.category.nameBn}</Badge>
-                {article.breaking && <Badge variant="breaking">ব্রেকিং</Badge>}
+                {article.breaking ? <Badge variant="breaking">ব্রেকিং</Badge> : null}
               </div>
 
-              <div className="px-6 pt-3 pb-4">
-                <h1 className="text-2xl md:text-3xl font-bold text-brand-text leading-tight mb-3 font-bangla">
+              <div className="px-6 pb-4 pt-3">
+                <h1 className="mb-3 text-2xl font-bold leading-tight text-brand-text md:text-3xl font-bangla">
                   {article.titleBn}
                 </h1>
                 <p className="text-lg text-brand-muted font-bangla">{article.subtitleBn}</p>
               </div>
 
-              <div className="px-6 pb-4 flex flex-wrap items-center gap-4 text-sm text-brand-muted border-b border-brand-border">
+              <div className="flex flex-wrap items-center gap-4 border-b border-brand-border px-6 pb-4 text-sm text-brand-muted">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                     {article.author.nameBn.charAt(0)}
                   </div>
                   <div>
@@ -90,21 +126,23 @@ export default async function BnArticlePage({ params }: Props) {
                 <span className="text-brand-border">|</span>
                 <span className="font-bangla">{article.views.toLocaleString()} বার দেখা হয়েছে</span>
 
-                <div className="flex items-center gap-2 ml-auto">
-                  <button className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">FB</button>
-                  <button className="text-xs px-2 py-1 bg-sky-500 text-white rounded hover:bg-sky-600">TW</button>
-                  <button className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">WA</button>
+                <div className="ml-auto flex items-center gap-2">
+                  <button className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">FB</button>
+                  <button className="rounded bg-sky-500 px-2 py-1 text-xs text-white hover:bg-sky-600">TW</button>
+                  <button className="rounded bg-green-600 px-2 py-1 text-xs text-white hover:bg-green-700">WA</button>
                 </div>
               </div>
 
-              <div className="relative aspect-[16/9] overflow-hidden mx-6 mt-4 rounded-lg">
-                <img src={article.image} alt={article.titleBn} className="w-full h-full object-cover" />
+              <div className="relative mx-6 mt-4 aspect-[16/9] overflow-hidden rounded-lg">
+                {article.image?.trim() ? (
+                  <img src={article.image} alt={article.titleBn} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-app text-sm text-ink-faint">ছবি নেই</div>
+                )}
               </div>
-              {article.imageCaption && (
-                <p className="px-6 mt-2 text-xs text-brand-muted text-center italic font-bangla">
-                  {article.imageCaption}
-                </p>
-              )}
+              {article.imageCaption ? (
+                <p className="mt-2 px-6 text-center text-xs italic text-brand-muted font-bangla">{article.imageCaption}</p>
+              ) : null}
 
               <div className="px-6 py-6">
                 <ArticleBody content={article.bodyBn} lang="bn" />
@@ -114,14 +152,14 @@ export default async function BnArticlePage({ params }: Props) {
                 <AdSlot size="468x60" label="বিজ্ঞাপন" />
               </div>
 
-              <div className="px-6 pb-6 border-t border-brand-border pt-4">
-                <p className="text-sm font-medium text-brand-text mb-2 font-bangla">ট্যাগ:</p>
+              <div className="border-t border-brand-border px-6 pb-6 pt-4">
+                <p className="mb-2 text-sm font-medium text-brand-text font-bangla">ট্যাগ:</p>
                 <div className="flex flex-wrap gap-2">
                   {article.tags.map((tag) => (
                     <Link
                       key={tag.id}
                       href={`/search?lang=bn&q=${tag.slug}`}
-                      className="text-xs px-3 py-1 bg-brand-soft border border-brand-border rounded-full hover:border-primary hover:text-primary transition-colors font-bangla"
+                      className="rounded-full border border-brand-border bg-brand-soft px-3 py-1 text-xs font-bangla transition-colors hover:border-primary hover:text-primary"
                     >
                       #{tag.nameBn}
                     </Link>
@@ -134,18 +172,18 @@ export default async function BnArticlePage({ params }: Props) {
               <NewsletterSignup lang="bn" />
             </div>
 
-            {related.length > 0 && (
+            {related.length > 0 ? (
               <section className="mt-8">
-                <h2 className="text-xl font-bold text-brand-text border-l-4 border-primary pl-3 mb-4 font-bangla">
+                <h2 className="mb-4 border-l-4 border-primary pl-3 text-xl font-bold text-brand-text font-bangla">
                   সম্পর্কিত সংবাদ
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {related.map((a) => (
                     <ArticleCard key={a.id} article={a} lang="bn" variant="featured" />
                   ))}
                 </div>
               </section>
-            )}
+            ) : null}
 
             <CommentsThread articleId={article.id} lang="bn" enabled={config.features.enableComments} />
             <ViewBeacon articleId={article.id} path={`/bn/news/${article.slug}`} lang="bn" />
@@ -154,14 +192,14 @@ export default async function BnArticlePage({ params }: Props) {
           <aside className="space-y-6">
             <AdSlot size="300x250" label="বিজ্ঞাপন" />
 
-            <div className="bg-white rounded-xl border border-brand-border overflow-hidden">
-              <div className="bg-primary text-white px-4 py-3">
+            <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+              <div className="bg-primary px-4 py-3 text-white">
                 <h3 className="font-bold font-bangla">জনপ্রিয় সংবাদ</h3>
               </div>
-              <div className="p-4 space-y-4">
+              <div className="space-y-4 p-4">
                 {popular.map((a, i) => (
                   <div key={a.id} className="flex items-start gap-3">
-                    <span className="text-2xl font-black text-gray-200 w-6 flex-shrink-0 leading-none">{i + 1}</span>
+                    <span className="w-6 shrink-0 text-2xl font-black leading-none text-gray-200">{i + 1}</span>
                     <ArticleCard article={a} lang="bn" variant="sidebar" />
                   </div>
                 ))}

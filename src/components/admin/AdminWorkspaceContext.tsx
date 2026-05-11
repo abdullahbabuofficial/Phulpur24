@@ -3,21 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
-import { getAdminSession } from '@/components/admin/adminAuth';
 import { canAccessAdminPath } from '@/lib/admin-rbac';
 import type { ProfileRow } from '@/lib/supabase/types';
-
-const DEMO_PROFILE: ProfileRow = {
-  id: 'demo',
-  email: 'demo@local.test',
-  full_name: 'Demo Admin',
-  role: 'admin',
-  avatar_url: null,
-  status: 'active',
-  articles_count: 0,
-  last_seen_at: null,
-  created_at: new Date().toISOString(),
-};
 
 interface AdminWorkspaceValue {
   profile: ProfileRow | null;
@@ -52,13 +39,6 @@ export function AdminWorkspaceProvider({ children }: { children: React.ReactNode
   const loadProfile = useCallback(async () => {
     if (isLogin) {
       setProfile(null);
-      setLoading(false);
-      return;
-    }
-
-    const local = getAdminSession();
-    if (local?.source === 'demo') {
-      setProfile(DEMO_PROFILE);
       setLoading(false);
       return;
     }
@@ -110,7 +90,7 @@ export function AdminWorkspaceProvider({ children }: { children: React.ReactNode
       <div className="flex min-h-screen items-center justify-center bg-app px-4">
         <div className="flex items-center gap-3 rounded-xl border border-line bg-white px-5 py-4 text-sm text-ink-muted shadow-card">
           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/40 border-t-accent" />
-          Loading workspace…
+          Loading workspace...
         </div>
       </div>
     );

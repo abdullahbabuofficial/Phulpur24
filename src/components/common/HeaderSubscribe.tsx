@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
@@ -31,8 +31,8 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
     short: isBn ? 'সাবস্ক্রাইব' : 'Subscribe',
     placeholder: isBn ? 'আপনার ইমেইল লিখুন' : 'Enter your email',
     submit: isBn ? 'যোগ দিন' : 'Join',
-    sending: isBn ? 'পাঠানো হচ্ছে…' : 'Sending…',
-    success: isBn ? '✓ ধন্যবাদ! সাবস্ক্রাইব হয়েছে।' : '✓ Thank you! You are subscribed.',
+    sending: isBn ? 'পাঠানো হচ্ছে...' : 'Sending...',
+    success: isBn ? 'সাবস্ক্রাইব সম্পন্ন হয়েছে। ধন্যবাদ।' : 'Thank you. You are subscribed.',
     close: isBn ? 'বন্ধ করুন' : 'Close',
     blurb: isBn
       ? 'সর্বশেষ ফুলপুর সংবাদ সরাসরি আপনার ইনবক্সে।'
@@ -82,12 +82,12 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`hidden md:flex items-center gap-1.5 text-sm font-medium bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-primary-dark transition-colors ${
+        className={`inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-dark ${
           isBn ? 'font-bangla' : ''
         }`}
       >
         <svg
-          className="w-4 h-4"
+          className="h-4 w-4"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -107,14 +107,14 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
         <div
           role="dialog"
           aria-label={labels.button}
-          className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] z-50 rounded-xl border border-brand-border bg-white shadow-xl p-4"
+          className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-brand-border bg-white p-4 shadow-xl"
         >
-          <div className="flex items-start justify-between mb-3">
+          <div className="mb-3 flex items-start justify-between">
             <div>
               <h3 className={`text-sm font-semibold text-brand-text ${isBn ? 'font-bangla' : ''}`}>
                 {labels.button}
               </h3>
-              <p className={`text-xs text-brand-muted mt-0.5 ${isBn ? 'font-bangla' : ''}`}>
+              <p className={`mt-0.5 text-xs text-brand-muted ${isBn ? 'font-bangla' : ''}`}>
                 {labels.blurb}
               </p>
             </div>
@@ -124,7 +124,7 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
               aria-label={labels.close}
               className="text-brand-muted hover:text-primary"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -132,14 +132,14 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
 
           {state === 'success' ? (
             <p
-              className={`rounded-md bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-2 ${
+              className={`rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 ${
                 isBn ? 'font-bangla' : ''
               }`}
             >
               {labels.success}
             </p>
           ) : (
-            <form onSubmit={handleSubmit} className="flex gap-2">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-2 sm:flex-row">
               <input
                 ref={inputRef}
                 type="email"
@@ -148,14 +148,14 @@ export default function HeaderSubscribe({ lang }: HeaderSubscribeProps) {
                 placeholder={labels.placeholder}
                 required
                 disabled={state === 'submitting'}
-                className={`flex-1 px-3 py-2 text-sm rounded-md border border-brand-border focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary ${
+                className={`flex-1 rounded-md border border-brand-border px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                   isBn ? 'font-bangla' : ''
                 }`}
               />
               <button
                 type="submit"
                 disabled={state === 'submitting'}
-                className={`px-3 py-2 text-sm font-semibold rounded-md bg-primary text-white hover:bg-primary-dark transition-colors disabled:opacity-60 whitespace-nowrap ${
+                className={`whitespace-nowrap rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-60 ${
                   isBn ? 'font-bangla' : ''
                 }`}
               >

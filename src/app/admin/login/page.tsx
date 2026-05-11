@@ -135,7 +135,7 @@ export default function AdminLoginPage() {
             <p className="mt-1 text-sm text-ink-muted">
               Enter your credentials to access the admin console.
             </p>
-            {adminAuthMode === 'live+demo' ? (
+            {adminAuthMode !== 'live' ? (
               <p className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-warning/20 bg-warning-soft px-2 py-1 text-[11px] font-medium text-warning-text">
                 <Icon.Info size={12} /> Demo mode is enabled in this build. Disable it before deploying.
               </p>

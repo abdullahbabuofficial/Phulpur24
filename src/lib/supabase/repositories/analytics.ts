@@ -3,19 +3,18 @@ import { getSupabase } from '../db';
 import * as viewsRepo from './views';
 import type { ArticleWithRelations, DashboardStatsRow } from '../types';
 
-const ARTICLE_SELECT = `
-  *,
-  category:categories(*),
-  author:authors(*),
-  article_tags(tag:tags(*))
-`;
+const TOP_ARTICLES_SELECT =
+  'id,slug,title_bn,title_en,category_id,author_id,cover_image_url,views,status,seo_score,published_at,updated_at,created_at,category:categories(id,slug,name_bn,name_en,color,sort_order,created_at),author:authors(id,name_bn,name_en,role,avatar_url,bio,created_at),article_tags(tag:tags(id,slug,name_bn,name_en,created_at))';
 
 function flatten(row: Record<string, unknown>): ArticleWithRelations {
   const joins = (row.article_tags as Array<{ tag: unknown }> | undefined) ?? [];
   const tags = joins.map((j) => j.tag);
   const { article_tags, ...rest } = row as { article_tags?: unknown };
   void article_tags;
-  return { ...(rest as ArticleWithRelations), tags } as ArticleWithRelations;
+  const normalized = rest as Partial<ArticleWithRelations>;
+  if (typeof normalized.body_bn !== 'string') normalized.body_bn = '';
+  if (typeof normalized.body_en !== 'string') normalized.body_en = '';
+  return { ...(normalized as ArticleWithRelations), tags } as ArticleWithRelations;
 }
 
 function clientOrDefault(sb?: SupabaseClient): SupabaseClient {
@@ -72,7 +71,7 @@ export async function getTopArticles(limit = 5, sb?: SupabaseClient) {
   const supabase = clientOrDefault(sb);
   const { data, error } = await supabase
     .from('articles')
-    .select(ARTICLE_SELECT)
+    .select(TOP_ARTICLES_SELECT)
     .eq('status', 'published')
     .order('views', { ascending: false })
     .limit(limit);

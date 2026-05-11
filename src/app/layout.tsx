@@ -6,10 +6,63 @@ import SiteConfigProvider from "@/components/common/SiteConfigProvider";
 import { getPublicSiteConfig } from "@/lib/get-public-site-config";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Phulpur24 | ফুলপুর২৪",
-  description: "সবার আগে ফুলপুরের খবর | Phulpur News First",
-};
+function normalizeTitleSuffix(suffix: string): string {
+  const trimmed = suffix.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("|") || trimmed.startsWith("-")) return ` ${trimmed}`;
+  return ` | ${trimmed}`;
+}
+
+function isHttpUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const config = await getPublicSiteConfig();
+  const siteName =
+    config.seo.metaTitleBn?.trim() ||
+    config.siteName.trim() ||
+    "Phulpur24";
+  const englishTitle =
+    config.seo.metaTitleEn?.trim() ||
+    config.siteName.trim() ||
+    "Phulpur24";
+  const titleSuffix = normalizeTitleSuffix(config.seo.metaTitleSuffix);
+  const description =
+    config.seo.metaDescription.trim() ||
+    config.descriptionBn.trim() ||
+    config.descriptionEn.trim() ||
+    "Phulpur24";
+
+  return {
+    title: {
+      default: siteName,
+      template: `%s${titleSuffix || ` | ${siteName}`}`,
+    },
+    description,
+    applicationName: siteName,
+    openGraph: {
+      title: englishTitle,
+      description,
+      siteName,
+      type: "website",
+      locale: "bn_BD",
+    },
+    icons: isHttpUrl(config.branding.faviconUrl)
+      ? {
+          icon: [{ url: config.branding.faviconUrl }],
+          shortcut: [{ url: config.branding.faviconUrl }],
+          apple: [{ url: config.branding.faviconUrl }],
+        }
+      : undefined,
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

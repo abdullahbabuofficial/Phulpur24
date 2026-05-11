@@ -596,8 +596,8 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
                     {draft.title_en || draft.title_bn || 'Untitled story'}
                   </h1>
                   <p className="mt-1 text-sm text-ink-muted">{draft.subtitle_en || draft.subtitle_bn}</p>
-                  {draft.cover_image_url ? (
-                    <img src={draft.cover_image_url} alt="" className="mt-4 aspect-video w-full rounded-lg object-cover" />
+                  {draft.cover_image_url.trim() ? (
+                    <img src={draft.cover_image_url.trim()} alt="" className="mt-4 aspect-video w-full rounded-lg object-cover" />
                   ) : (
                     <div className="mt-4 flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-line text-ink-faint">
                       <Icon.Image size={20} />
@@ -742,8 +742,8 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
         <Card padded>
           <CardHeader title="Cover image" />
           <div className="mt-4 space-y-2">
-            {draft.cover_image_url ? (
-              <img src={draft.cover_image_url} alt="" className="aspect-video w-full rounded-lg object-cover" />
+            {draft.cover_image_url.trim() ? (
+              <img src={draft.cover_image_url.trim()} alt="" className="aspect-video w-full rounded-lg object-cover" />
             ) : (
               <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-line text-ink-faint">
                 <Icon.Image size={20} />

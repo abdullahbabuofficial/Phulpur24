@@ -5,11 +5,12 @@
  * the legacy camelCase `Article` / `Category` / `Tag` / `Author` shapes that
  * the existing public pages and components expect.
  *
- * All exports are async — public pages should be `async` server components
+ * All exports are async - public pages should be `async` server components
  * and `await` these helpers at the top of their render.
  */
 
 import { supabase } from './supabase/client';
+import { unstable_cache } from 'next/cache';
 import type {
   ArticleRow,
   ArticleWithRelations,
@@ -99,14 +100,152 @@ function flatten(row: Record<string, unknown>): ArticleWithRelations {
 // ---------- public helpers ----------
 
 export async function getCategories(): Promise<Category[]> {
-  const { data, error } = await supabase.from('categories').select('*').order('sort_order');
-  if (error) {
-    // eslint-disable-next-line no-console
-    console.error('[data.getCategories]', error);
-    return [];
-  }
-  return ((data ?? []) as CategoryRow[]).map(toCategory);
+  return getCategoriesCached();
 }
+
+const getCategoriesCached = unstable_cache(
+  async (): Promise<Category[]> => {
+    const { data, error } = await supabase.from('categories').select('*').order('sort_order');
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[data.getCategories]', error);
+      return [];
+    }
+    return ((data ?? []) as CategoryRow[]).map(toCategory);
+  },
+  ['categories.v1'],
+  { revalidate: 300, tags: ['categories'] }
+);
+
+export interface HomePageData {
+  categories: Category[];
+  featured: Article[];
+  latest: Article[];
+  popular: Article[];
+  localNews: Article[];
+  sportsNews: Article[];
+  techNews: Article[];
+  breaking: { bn: string[]; en: string[] };
+}
+
+export interface CategoryPageData {
+  category: Category | null;
+  categories: Category[];
+  articles: Article[];
+}
+
+export interface ArticlePageData {
+  article: Article | null;
+  related: Article[];
+  popular: Article[];
+  categories: Category[];
+}
+
+function uniqueArticles(rows: Article[]): Article[] {
+  const seen = new Set<string>();
+  const out: Article[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * Optimized homepage payload:
+ * - one category query
+ * - one recent published-article query
+ * Then derive all homepage sections in memory.
+ */
+export async function getHomePageData(poolLimit = 80): Promise<HomePageData> {
+  return getHomePageDataCached(poolLimit);
+}
+
+const getHomePageDataCached = unstable_cache(
+  async (poolLimit: number): Promise<HomePageData> => {
+  const [categoriesRes, publishedRes] = await Promise.all([
+    supabase.from('categories').select('*').order('sort_order'),
+    supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(poolLimit),
+  ]);
+
+  if (categoriesRes.error) {
+    // eslint-disable-next-line no-console
+    console.error('[data.getHomePageData.categories]', categoriesRes.error);
+  }
+  if (publishedRes.error) {
+    // eslint-disable-next-line no-console
+    console.error('[data.getHomePageData.published]', publishedRes.error);
+  }
+
+  const categories = ((categoriesRes.data ?? []) as CategoryRow[]).map(toCategory);
+  const articles = ((publishedRes.data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+
+  const featured = uniqueArticles([
+    ...articles.filter((a) => a.featured),
+    ...articles,
+  ]).slice(0, 5);
+  const latest = articles.slice(0, 8);
+  const popular = [...articles].sort((a, b) => b.views - a.views).slice(0, 6);
+
+  const localNews = articles.filter((a) => a.category.slug === 'local').slice(0, 4);
+  const sportsNews = articles.filter((a) => a.category.slug === 'sports').slice(0, 3);
+  const techNews = articles.filter((a) => a.category.slug === 'technology').slice(0, 3);
+
+  const breakingRows = articles.filter((a) => a.breaking).slice(0, 6);
+  const breaking = {
+    bn: breakingRows.map((a) => a.titleBn),
+    en: breakingRows.map((a) => a.titleEn),
+  };
+
+  return {
+    categories,
+    featured,
+    latest,
+    popular,
+    localNews,
+    sportsNews,
+    techNews,
+    breaking,
+  };
+  },
+  ['home-page-data.v2'],
+  { revalidate: 60, tags: ['home-page-data'] }
+);
+
+export async function getCategoryPageData(slug: string, limit?: number): Promise<CategoryPageData> {
+  return getCategoryPageDataCached(slug, limit);
+}
+
+const getCategoryPageDataCached = unstable_cache(
+  async (slug: string, limit?: number): Promise<CategoryPageData> => {
+    const categories = await getCategoriesCached();
+    const category = categories.find((c) => c.slug === slug) ?? null;
+    if (!category) {
+      return { category: null, categories, articles: [] };
+    }
+
+    let query = supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('status', 'published')
+      .eq('category_id', category.id)
+      .order('published_at', { ascending: false });
+    if (typeof limit === 'number') query = query.limit(limit);
+
+    const { data, error } = await query;
+    if (error) console.error('[data.getCategoryPageData]', error);
+    const articles = ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+    return { category, categories, articles };
+  },
+  ['category-page-data.v1'],
+  { revalidate: 60, tags: ['category-page-data'] }
+);
 
 export async function getAuthors(): Promise<Author[]> {
   const { data } = await supabase.from('authors').select('*').order('name_en');
@@ -142,15 +281,23 @@ export async function getLatestArticles(limit = 10): Promise<Article[]> {
 }
 
 export async function getPopularArticles(limit = 5): Promise<Article[]> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select(ARTICLE_SELECT)
-    .eq('status', 'published')
-    .order('views', { ascending: false })
-    .limit(limit);
-  if (error) console.error('[data.getPopularArticles]', error);
-  return ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+  return getPopularArticlesCached(limit);
 }
+
+const getPopularArticlesCached = unstable_cache(
+  async (limit: number): Promise<Article[]> => {
+    const { data, error } = await supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('status', 'published')
+      .order('views', { ascending: false })
+      .limit(limit);
+    if (error) console.error('[data.getPopularArticles]', error);
+    return ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+  },
+  ['popular-articles.v1'],
+  { revalidate: 60, tags: ['popular-articles'] }
+);
 
 export async function getArticlesByCategory(categorySlug: string, limit?: number): Promise<Article[]> {
   // Resolve slug to id first
@@ -180,28 +327,59 @@ export async function getCategoryBySlug(slug: string): Promise<Category | null> 
 }
 
 export async function getArticleBySlug(slug: string): Promise<Article | null> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select(ARTICLE_SELECT)
-    .eq('slug', slug)
-    .eq('status', 'published')
-    .maybeSingle();
-  if (error) console.error('[data.getArticleBySlug]', error);
-  if (!data) return null;
-  return toArticle(flatten(data as Record<string, unknown>));
+  return getArticleBySlugCached(slug);
 }
 
+const getArticleBySlugCached = unstable_cache(
+  async (slug: string): Promise<Article | null> => {
+    const { data, error } = await supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .maybeSingle();
+    if (error) console.error('[data.getArticleBySlug]', error);
+    if (!data) return null;
+    return toArticle(flatten(data as Record<string, unknown>));
+  },
+  ['article-by-slug.v1'],
+  { revalidate: 60, tags: ['article-by-slug'] }
+);
+
 export async function getRelatedArticles(article: Article, limit = 4): Promise<Article[]> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select(ARTICLE_SELECT)
-    .eq('status', 'published')
-    .eq('category_id', article.category.id)
-    .neq('id', article.id)
-    .order('published_at', { ascending: false })
-    .limit(limit);
-  if (error) console.error('[data.getRelatedArticles]', error);
-  return ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+  return getRelatedArticlesCached(article.category.id, article.id, limit);
+}
+
+const getRelatedArticlesCached = unstable_cache(
+  async (categoryId: string, articleId: string, limit: number): Promise<Article[]> => {
+    const { data, error } = await supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('status', 'published')
+      .eq('category_id', categoryId)
+      .neq('id', articleId)
+      .order('published_at', { ascending: false })
+      .limit(limit);
+    if (error) console.error('[data.getRelatedArticles]', error);
+    return ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+  },
+  ['related-articles.v1'],
+  { revalidate: 60, tags: ['related-articles'] }
+);
+
+export async function getArticlePageData(slug: string): Promise<ArticlePageData> {
+  const article = await getArticleBySlugCached(slug);
+  if (!article) {
+    return { article: null, related: [], popular: [], categories: [] };
+  }
+
+  const [related, popular, categories] = await Promise.all([
+    getRelatedArticlesCached(article.category.id, article.id, 4),
+    getPopularArticlesCached(5),
+    getCategoriesCached(),
+  ]);
+
+  return { article, related, popular, categories };
 }
 
 export async function searchPublishedArticles(query: string): Promise<Article[]> {
@@ -236,20 +414,11 @@ export async function getBreakingNewsItems(): Promise<{ bn: string[]; en: string
     .limit(6);
 
   const rows = ((data ?? []) as { title_bn: string; title_en: string }[]) ?? [];
-  if (rows.length === 0) {
-    return {
-      bn: [
-        'ফুলপুরে নতুন সড়ক উন্নয়ন প্রকল্পের কাজ শুরু হয়েছে',
-        'বন্যা প্রস্তুতিতে ময়মনসিংহে সতর্কতা জারি',
-      ],
-      en: [
-        'Road development project begins in Phulpur',
-        'Flood preparedness alert issued in Mymensingh',
-      ],
-    };
-  }
+  if (rows.length === 0) return { bn: [], en: [] };
   return {
     bn: rows.map((r) => r.title_bn),
     en: rows.map((r) => r.title_en),
   };
 }
+
+

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'edge';
@@ -19,12 +19,6 @@ function unauthorized(reason: string) {
   );
 }
 
-/**
- * Verify the caller is signed in to Supabase by checking the access token
- * passed as `Authorization: Bearer <token>`. If Supabase env is missing or
- * the token is invalid, return 401. This route would otherwise be open to
- * the entire internet and would burn through the Anthropic key.
- */
 async function requireAuthedUser(request: Request): Promise<
   | { ok: true; userId: string }
   | { ok: false; response: NextResponse }
@@ -72,35 +66,66 @@ function buildPrompt({ topic, keywords, tone, language }: Required<Body>) {
     language === 'bn'
       ? 'Write the entire draft in Bangla.'
       : language === 'en'
-      ? 'Write the entire draft in English.'
-      : 'Produce the draft in both Bangla and English, separated by `---`.';
+        ? 'Write the entire draft in English.'
+        : 'Produce the draft in both Bangla and English, separated by `---`.';
+
   return `Write a publishable first draft for a Phulpur24 news article.
 
 Topic: ${topic}
 Key angles: ${keywords || '(use your judgement)'}
 Tone: ${tone}
-Length: 250–400 words.
+Length: 250-400 words.
 
 ${langInstruction}
 
-Structure each language version with a one-line headline, then 3–4 short paragraphs separated by blank lines, optionally with a "## Subheading" between sections. Be specific, but flag any unverified claim with "(to confirm)".`;
+Structure each language version with a one-line headline, then 3-4 short paragraphs separated by blank lines, optionally with a "## Subheading" between sections. Be specific, but flag any unverified claim with "(to confirm)".`;
 }
 
-const cannedBn = (topic: string, kw: string, tone: string) => `ফুলপুরে ${topic} নিয়ে বিস্তারিত প্রতিবেদন
+function buildFallbackDraft(params: Required<Body>): string {
+  const localKeyPoints = params.keywords
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  const pointsLine =
+    localKeyPoints.length > 0
+      ? localKeyPoints.join(', ')
+      : params.language === 'bn'
+        ? 'প্রেক্ষাপট, প্রভাব, স্থানীয় প্রতিক্রিয়া'
+        : 'context, impact, local reaction';
 
-ফুলপুর উপজেলায় ${topic} সংক্রান্ত একটি গুরুত্বপূর্ণ অগ্রগতি হয়েছে। প্রতিবেদনটি ${tone.toLowerCase()} সুরে রচিত। ${kw ? `মূল বিষয়গুলোর মধ্যে রয়েছে ${kw}।` : ''}
+  const en = `${params.topic}
 
-স্থানীয় প্রশাসন জানিয়েছে, বিষয়টি নিয়ে সংশ্লিষ্ট দপ্তরগুলো সমন্বিতভাবে কাজ করছে। নাগরিক সেবা, নিরাপত্তা এবং দীর্ঘমেয়াদি উন্নয়নের দিক বিবেচনায় পরবর্তী পদক্ষেপ নেওয়া হবে।
+## Key context
+Initial reporting indicates this topic is relevant for local readers in Phulpur. This draft is prepared as a newsroom fallback and should be updated with verified quotes, timeline details, and official attribution before publication.
 
-স্থানীয় বাসিন্দারা আশা করছেন, এই উদ্যোগ দ্রুত বাস্তবায়ন হলে এলাকার মানুষ সরাসরি উপকৃত হবেন।`;
+## What we know so far
+Current working angles include: ${pointsLine}. Editors should confirm dates, locations, and stakeholder names directly from primary sources.
 
-const cannedEn = (topic: string, kw: string, tone: string) => `Phulpur update on ${topic}
+## Local impact and next steps
+Residents and local institutions may be affected depending on scope and implementation details. Reporters should gather field reactions and include any follow-up updates from authorities.
 
-A significant ${tone.toLowerCase()} development concerning ${topic} has occurred in Phulpur upazila. ${kw ? `Key angles include ${kw}.` : ''}
+## Verification note
+This is a structured starter draft generated without live LLM output. Please fact-check all statements before publishing.`;
 
-Local administration said relevant offices are working in coordination on the matter. Next steps will consider public service, safety, and long-term development needs.
+  const bn = `${params.topic}
 
-Residents hope the initiative will move quickly and bring direct benefits to the community.`;
+## প্রাথমিক প্রেক্ষাপট
+ফুলপুরের পাঠকদের জন্য বিষয়টি গুরুত্বপূর্ণ হওয়ায় এটি একটি নিউজরুম-ফলব্যাক খসড়া হিসেবে প্রস্তুত করা হয়েছে। প্রকাশের আগে অবশ্যই যাচাই করা উদ্ধৃতি, সময়রেখা এবং আনুষ্ঠানিক সূত্র যোগ করতে হবে।
+
+## এখন পর্যন্ত জানা তথ্য
+প্রাথমিক ফোকাস পয়েন্ট: ${pointsLine}। সম্পাদকীয় টিমকে মূল উৎস থেকে তারিখ, স্থান এবং সংশ্লিষ্ট পক্ষের নাম নিশ্চিত করতে হবে।
+
+## স্থানীয় প্রভাব ও পরবর্তী কাজ
+বাস্তবায়নের ধরণ ও পরিসরের উপর নির্ভর করে স্থানীয় জনগণ ও প্রতিষ্ঠানের উপর প্রভাব পড়তে পারে। মাঠ-রিপোর্ট যুক্ত করে প্রশাসনের পরবর্তী আপডেট অন্তর্ভুক্ত করা প্রয়োজন।
+
+## যাচাই নোট
+এটি লাইভ LLM আউটপুট ছাড়া প্রস্তুত করা কাঠামোবদ্ধ প্রাথমিক খসড়া। প্রকাশের আগে সব তথ্য ফ্যাক্ট-চেক করুন।`;
+
+  if (params.language === 'en') return en;
+  if (params.language === 'bn') return bn;
+  return `${bn}\n\n---\n\n${en}`;
+}
 
 export async function POST(request: Request) {
   const auth = await requireAuthedUser(request);
@@ -110,12 +135,14 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as Body;
   } catch {
-    /* empty */
+    // keep defaults
   }
+
   const topic = (body.topic ?? '').trim();
   const keywords = (body.keywords ?? '').trim();
   const tone = (body.tone ?? 'Neutral').trim();
   const language = (body.language ?? 'bn') as 'bn' | 'en' | 'both';
+  const requestShape: Required<Body> = { topic, keywords, tone, language };
 
   if (!topic) {
     return NextResponse.json(
@@ -123,17 +150,44 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE_HEADERS }
     );
   }
+  if (topic.length > 240) {
+    return NextResponse.json(
+      { ok: false, error: 'Topic is too long. Keep it under 240 characters.' },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
+  }
+  if (keywords.length > 500 || tone.length > 120) {
+    return NextResponse.json(
+      { ok: false, error: 'Keywords or tone input exceeds allowed length.' },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey) {
+  if (!apiKey) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          'AI draft service is unavailable: ANTHROPIC_API_KEY is not configured.',
+      },
+      { status: 503, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  try {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 25_000);
+    let res: Response;
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
         },
+        signal: abort.signal,
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 1200,
@@ -143,39 +197,47 @@ export async function POST(request: Request) {
           ],
         }),
       });
-      if (!res.ok) {
-        return NextResponse.json(
-          { ok: false, error: `LLM ${res.status}: ${await res.text()}` },
-          { status: 502, headers: NO_STORE_HEADERS }
-        );
-      }
-      const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-      const text = (json.content ?? [])
-        .map((p) => (p.type === 'text' ? p.text ?? '' : ''))
-        .join('')
-        .trim();
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      const upstream = (await res.text()).slice(0, 400);
+      const fallbackDraft = buildFallbackDraft(requestShape);
       return NextResponse.json(
-        { ok: true, mode: 'live', draft: text },
-        { headers: NO_STORE_HEADERS }
-      );
-    } catch (err) {
-      return NextResponse.json(
-        { ok: false, error: err instanceof Error ? err.message : 'Unknown error' },
-        { status: 500, headers: NO_STORE_HEADERS }
+        {
+          ok: true,
+          mode: 'fallback',
+          warning: `Live AI unavailable (LLM ${res.status}). Returned fallback draft.`,
+          upstream: upstream || undefined,
+          draft: fallbackDraft,
+        },
+        { status: 200, headers: NO_STORE_HEADERS }
       );
     }
+
+    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const text = (json.content ?? [])
+      .map((p) => (p.type === 'text' ? p.text ?? '' : ''))
+      .join('')
+      .trim();
+
+    return NextResponse.json(
+      { ok: true, mode: 'live', draft: text },
+      { headers: NO_STORE_HEADERS }
+    );
+  } catch (err) {
+    const fallbackDraft = buildFallbackDraft(requestShape);
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json(
+      {
+        ok: true,
+        mode: 'fallback',
+        warning: 'Live AI request failed; returned fallback draft.',
+        upstream: message,
+        draft: fallbackDraft,
+      },
+      { status: 200, headers: NO_STORE_HEADERS }
+    );
   }
-
-  // Fallback: deterministic canned templates so the UI works without an API key.
-  const draft =
-    language === 'bn'
-      ? cannedBn(topic, keywords, tone)
-      : language === 'en'
-      ? cannedEn(topic, keywords, tone)
-      : `${cannedBn(topic, keywords, tone)}\n\n---\n\n${cannedEn(topic, keywords, tone)}`;
-
-  return NextResponse.json(
-    { ok: true, mode: 'fallback', draft },
-    { headers: NO_STORE_HEADERS }
-  );
 }

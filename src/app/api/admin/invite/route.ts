@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin, hasSupabaseAdmin } from '@/lib/supabase/admin';
-import { createSupabaseServer } from '@/lib/supabase/server';
+import { requireStaff } from '@/app/api/admin/_auth';
 import type { ProfileRow } from '@/lib/supabase/types';
 
 export const dynamic = 'force-dynamic';
@@ -52,25 +52,10 @@ export async function POST(request: Request) {
     return json({ ok: false, error: 'Invalid role.' }, 400);
   }
 
-  const sessionClient = await createSupabaseServer();
-  const {
-    data: { user },
-    error: sessionErr,
-  } = await sessionClient.auth.getUser();
-  if (sessionErr || !user) {
-    return json({ ok: false, error: 'You must be signed in.' }, 401);
-  }
+  const access = await requireStaff(['admin'], request);
+  if (!access.ok) return access.response;
 
   const admin = getSupabaseAdmin()!;
-  const { data: actor } = await admin
-    .from('profiles')
-    .select('role')
-    .eq('auth_user_id', user.id)
-    .maybeSingle();
-
-  if (actor?.role !== 'admin') {
-    return json({ ok: false, error: 'Only admins can send invitations.' }, 403);
-  }
 
   const origin = new URL(request.url).origin;
   const redirectTo = `${origin}/admin/login`;
@@ -80,9 +65,22 @@ export async function POST(request: Request) {
   });
 
   if (inviteErr || !invited.user) {
+    const isRateLimited =
+      inviteErr?.status === 429 ||
+      (inviteErr?.message ?? '').toLowerCase().includes('rate limit');
+    if (isRateLimited) {
+      return json(
+        {
+          ok: false,
+          error:
+            'Invite delivery is temporarily rate-limited by the auth provider. Please wait a few minutes and retry.',
+        },
+        429
+      );
+    }
     const msg =
       inviteErr?.message ??
-      'Invite failed. The address may already be registered — remove the existing user first or reset password in Supabase.';
+      'Invite failed. The address may already be registered; remove the existing user first or reset password in Supabase.';
     return json({ ok: false, error: msg }, 400);
   }
 

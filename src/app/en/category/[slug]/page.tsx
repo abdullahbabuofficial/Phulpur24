@@ -6,7 +6,7 @@ import Navigation from '@/components/layout/Navigation';
 import ArticleCard from '@/components/articles/ArticleCard';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import AdSlot from '@/components/common/AdSlot';
-import { getArticlesByCategory, getCategories, getCategoryBySlug } from '@/lib/data';
+import { getCategories, getCategoryPageData } from '@/lib/data';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -21,11 +21,7 @@ export async function generateStaticParams() {
 
 export default async function EnCategoryPage({ params }: Props) {
   const { slug } = await params;
-  const [category, categories, catArticles] = await Promise.all([
-    getCategoryBySlug(slug),
-    getCategories(),
-    getArticlesByCategory(slug),
-  ]);
+  const { category, categories, articles: catArticles } = await getCategoryPageData(slug);
   if (!category) notFound();
 
   return (

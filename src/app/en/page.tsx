@@ -7,28 +7,14 @@ import ArticleCard from '@/components/articles/ArticleCard';
 import NewsletterSignup from '@/components/common/NewsletterSignup';
 import AdSlot from '@/components/common/AdSlot';
 import {
-  getArticlesByCategory,
-  getBreakingNewsItems,
-  getCategories,
-  getFeaturedArticles,
-  getLatestArticles,
-  getPopularArticles,
+  getHomePageData,
 } from '@/lib/data';
 
 export const revalidate = 60;
 
 export default async function EnHomePage() {
-  const [featured, latest, popular, localNews, sportsNews, techNews, categories, breaking] =
-    await Promise.all([
-      getFeaturedArticles(5),
-      getLatestArticles(8),
-      getPopularArticles(6),
-      getArticlesByCategory('local', 4),
-      getArticlesByCategory('sports', 3),
-      getArticlesByCategory('technology', 3),
-      getCategories(),
-      getBreakingNewsItems(),
-    ]);
+  const { featured, latest, popular, localNews, sportsNews, techNews, categories, breaking } =
+    await getHomePageData();
 
   const leadArticle = featured[0];
   const heroSecondary = featured.slice(1, 3);
@@ -39,9 +25,9 @@ export default async function EnHomePage() {
       <Navigation lang="en" categories={categories} />
       <BreakingNewsTicker lang="en" items={breaking.en} />
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-7xl px-4 py-6">
         <section className="mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {leadArticle && (
               <div className="lg:col-span-2">
                 <ArticleCard article={leadArticle} lang="en" variant="lead" />
@@ -59,32 +45,34 @@ export default async function EnHomePage() {
           <AdSlot size="728x90" label="Advertisement" className="mx-auto max-w-3xl" />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          <div className="space-y-8 lg:col-span-2">
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-brand-text border-l-4 border-primary pl-3">
-                  Latest News
-                </h2>
-                <Link href="/en/latest" className="text-sm text-primary hover:underline">View All →</Link>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="border-l-4 border-primary pl-3 text-xl font-bold text-brand-text">Latest News</h2>
+                <Link href="/en/latest" className="text-sm text-primary hover:underline">
+                  View All -&gt;
+                </Link>
               </div>
-              <div className="space-y-0 divide-y divide-brand-border bg-white rounded-xl border border-brand-border overflow-hidden">
-                {latest.map((article) => (
-                  <div key={article.id} className="px-4">
-                    <ArticleCard article={article} lang="en" variant="horizontal" />
-                  </div>
-                ))}
+              <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+                <div className="divide-y divide-brand-border">
+                  {latest.map((article) => (
+                    <div key={article.id} className="px-4">
+                      <ArticleCard article={article} lang="en" variant="horizontal" />
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-brand-text border-l-4 border-primary pl-3">
-                  Local News
-                </h2>
-                <Link href="/en/category/local" className="text-sm text-primary hover:underline">View All →</Link>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="border-l-4 border-primary pl-3 text-xl font-bold text-brand-text">Local News</h2>
+                <Link href="/en/category/local" className="text-sm text-primary hover:underline">
+                  View All -&gt;
+                </Link>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {localNews.map((article) => (
                   <ArticleCard key={article.id} article={article} lang="en" variant="featured" />
                 ))}
@@ -92,13 +80,13 @@ export default async function EnHomePage() {
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-brand-text border-l-4 border-accent-green pl-3">
-                  Sports
-                </h2>
-                <Link href="/en/category/sports" className="text-sm text-primary hover:underline">View All →</Link>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="border-l-4 border-accent-green pl-3 text-xl font-bold text-brand-text">Sports</h2>
+                <Link href="/en/category/sports" className="text-sm text-primary hover:underline">
+                  View All -&gt;
+                </Link>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {sportsNews.map((article) => (
                   <ArticleCard key={article.id} article={article} lang="en" variant="featured" />
                 ))}
@@ -108,13 +96,13 @@ export default async function EnHomePage() {
             <NewsletterSignup lang="en" />
 
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-brand-text border-l-4 border-blue-500 pl-3">
-                  Technology
-                </h2>
-                <Link href="/en/category/technology" className="text-sm text-primary hover:underline">View All →</Link>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="border-l-4 border-blue-500 pl-3 text-xl font-bold text-brand-text">Technology</h2>
+                <Link href="/en/category/technology" className="text-sm text-primary hover:underline">
+                  View All -&gt;
+                </Link>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {techNews.map((article) => (
                   <ArticleCard key={article.id} article={article} lang="en" variant="featured" />
                 ))}
@@ -125,14 +113,14 @@ export default async function EnHomePage() {
           <div className="space-y-6">
             <AdSlot size="300x250" label="Advertisement" />
 
-            <div className="bg-white rounded-xl border border-brand-border overflow-hidden">
-              <div className="bg-primary text-white px-4 py-3">
+            <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+              <div className="bg-primary px-4 py-3 text-white">
                 <h3 className="font-bold">Most Popular</h3>
               </div>
-              <div className="p-4 space-y-4">
+              <div className="space-y-4 p-4">
                 {popular.map((article, i) => (
                   <div key={article.id} className="flex items-start gap-3">
-                    <span className="text-2xl font-black text-gray-200 w-6 flex-shrink-0 leading-none">{i + 1}</span>
+                    <span className="w-6 shrink-0 text-2xl font-black leading-none text-gray-200">{i + 1}</span>
                     <ArticleCard article={article} lang="en" variant="sidebar" />
                   </div>
                 ))}
@@ -141,8 +129,8 @@ export default async function EnHomePage() {
 
             <AdSlot size="300x250" label="Advertisement" />
 
-            <div className="bg-white rounded-xl border border-brand-border overflow-hidden">
-              <div className="bg-brand-text text-white px-4 py-3">
+            <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
+              <div className="bg-brand-text px-4 py-3 text-white">
                 <h3 className="font-bold">Categories</h3>
               </div>
               <div className="p-3">
@@ -150,15 +138,15 @@ export default async function EnHomePage() {
                   <Link
                     key={cat.id}
                     href={`/en/category/${cat.slug}`}
-                    className="flex items-center justify-between px-3 py-2 rounded hover:bg-brand-soft transition-colors group"
+                    className="group flex items-center justify-between rounded px-3 py-2 transition-colors hover:bg-brand-soft"
                   >
                     <span
-                      className="text-sm font-medium group-hover:text-primary transition-colors"
+                      className="text-sm font-medium transition-colors group-hover:text-primary"
                       style={{ borderLeft: `3px solid ${cat.color}`, paddingLeft: '8px' }}
                     >
                       {cat.nameEn}
                     </span>
-                    <span className="text-xs text-brand-muted">→</span>
+                    <span className="text-xs text-brand-muted">-&gt;</span>
                   </Link>
                 ))}
               </div>

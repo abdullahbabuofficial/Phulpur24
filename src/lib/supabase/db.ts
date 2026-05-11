@@ -10,20 +10,27 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const isConfigured = Boolean(url && key);
 
-if (!url || !key) {
+if (!isConfigured) {
   // eslint-disable-next-line no-console
   console.warn('[supabase] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY missing.');
 }
 
-const fallbackUrl = url ?? 'http://localhost:54321';
-const fallbackKey = key ?? 'missing-key';
+function assertConfigured() {
+  if (!url || !key) {
+    throw new Error(
+      'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+    );
+  }
+}
 
 let serverAnon: SupabaseClient | null = null;
 
 function getServerAnonClient(): SupabaseClient {
+  assertConfigured();
   if (!serverAnon) {
-    serverAnon = createClient(fallbackUrl, fallbackKey, {
+    serverAnon = createClient(url!, key!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }
@@ -34,11 +41,12 @@ let browserClient: SupabaseClient | null = null;
 
 /** Prefer this when you need an explicit reference (e.g. passing into helpers). */
 export function getSupabase(): SupabaseClient {
+  assertConfigured();
   if (typeof window === 'undefined') {
     return getServerAnonClient();
   }
   if (!browserClient) {
-    browserClient = createBrowserClient(fallbackUrl, fallbackKey);
+    browserClient = createBrowserClient(url!, key!);
   }
   return browserClient;
 }
@@ -58,7 +66,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 }) as SupabaseClient;
 
-export const SUPABASE_MODE = url && key ? ('live' as const) : ('mock' as const);
+export const SUPABASE_MODE = isConfigured ? ('live' as const) : ('unconfigured' as const);
 
 export interface SupabaseAuthSession {
   user: {

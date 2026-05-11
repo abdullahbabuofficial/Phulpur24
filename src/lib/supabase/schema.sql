@@ -137,8 +137,19 @@ create table if not exists media_assets (
   size_label text not null default '',
   uploaded_by text not null default '',
   uploaded_at timestamptz not null default now(),
-  alt_text text
+  alt_text text,
+  optimization_meta jsonb
 );
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'media_assets' and column_name = 'optimization_meta'
+  ) then
+    alter table public.media_assets add column optimization_meta jsonb;
+  end if;
+end $$;
 
 -- ---------- audit log ----------
 create table if not exists audit_logs (
@@ -157,10 +168,16 @@ create table if not exists site_settings (
   site_name text not null,
   site_url text not null,
   default_language lang not null default 'bn',
+  logo_url text not null default '',
+  logo_dark_url text not null default '',
+  logo_alt text not null default 'Phulpur24',
+  favicon_url text not null default '',
   tagline_bn text not null,
   tagline_en text not null,
   description_bn text not null default '',
   description_en text not null default '',
+  meta_title_bn text not null default 'Phulpur24',
+  meta_title_en text not null default 'Phulpur24',
   meta_title_suffix text not null default '',
   meta_description text not null default '',
   enable_sitemap boolean not null default true,
@@ -172,6 +189,46 @@ create table if not exists site_settings (
   contact jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'logo_url'
+  ) then
+    alter table public.site_settings add column logo_url text not null default '';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'logo_dark_url'
+  ) then
+    alter table public.site_settings add column logo_dark_url text not null default '';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'logo_alt'
+  ) then
+    alter table public.site_settings add column logo_alt text not null default 'Phulpur24';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'favicon_url'
+  ) then
+    alter table public.site_settings add column favicon_url text not null default '';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'meta_title_bn'
+  ) then
+    alter table public.site_settings add column meta_title_bn text not null default 'Phulpur24';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'site_settings' and column_name = 'meta_title_en'
+  ) then
+    alter table public.site_settings add column meta_title_en text not null default 'Phulpur24';
+  end if;
+end $$;
 
 -- ---------- dashboard stats (singleton id='stats') ----------
 create table if not exists dashboard_stats (

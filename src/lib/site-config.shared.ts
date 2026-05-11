@@ -6,6 +6,12 @@ export interface SiteConfig {
   siteName: string;
   siteUrl: string;
   defaultLanguage: 'bn' | 'en';
+  branding: {
+    logoUrl: string;
+    logoDarkUrl: string;
+    logoAlt: string;
+    faviconUrl: string;
+  };
   taglineBn: string;
   taglineEn: string;
   descriptionBn: string;
@@ -25,6 +31,8 @@ export interface SiteConfig {
     hoursEn: string;
   };
   seo: {
+    metaTitleBn?: string;
+    metaTitleEn?: string;
     metaTitleSuffix: string;
     metaDescription: string;
     enableSitemap: boolean;
@@ -43,6 +51,12 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   siteName: 'Phulpur24',
   siteUrl: 'https://phulpur24.com',
   defaultLanguage: 'bn',
+  branding: {
+    logoUrl: '',
+    logoDarkUrl: '',
+    logoAlt: 'Phulpur24',
+    faviconUrl: '',
+  },
   taglineBn: 'সবার আগে ফুলপুরের খবর',
   taglineEn: 'Phulpur News First',
   descriptionBn: 'সবার আগে ফুলপুরের খবর। স্থানীয় সংবাদ, জাতীয় আপডেট এবং আরও অনেক কিছু।',
@@ -62,6 +76,8 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     hoursEn: 'Mon–Fri: 9:00 AM – 8:00 PM',
   },
   seo: {
+    metaTitleBn: 'Phulpur24',
+    metaTitleEn: 'Phulpur24',
     metaTitleSuffix: '| Phulpur24',
     metaDescription: 'সবার আগে ফুলপুরের খবর। Phulpur24 - Your source for local and national news.',
     enableSitemap: true,
@@ -84,6 +100,7 @@ export function mergeSiteConfigLayers(base: SiteConfig, ...layers: Partial<SiteC
     out = {
       ...out,
       ...layer,
+      branding: { ...out.branding, ...layer.branding },
       social: { ...out.social, ...layer.social },
       contact: { ...out.contact, ...layer.contact },
       seo: { ...out.seo, ...layer.seo },
@@ -111,3 +128,4 @@ export function normalizeLegacyContact(config: SiteConfig): SiteConfig {
     },
   };
 }
+

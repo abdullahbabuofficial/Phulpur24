@@ -9,6 +9,7 @@ import { canAccessAdminPath, staffRoleLabel } from '@/lib/admin-rbac';
 import { Avatar } from '@/components/admin/ui/Avatar';
 import { Icon } from '@/components/admin/ui/Icon';
 import SearchModal from '@/components/common/SearchModal';
+import type { SearchQuickLink } from '@/components/common/SearchModal';
 import { getSiteConfig } from '@/lib/site-config';
 
 interface AdminTopbarProps {
@@ -30,25 +31,25 @@ interface Notification {
 const seedNotifications: Notification[] = [
   {
     id: 'n1',
-    title: '5 posts pending review',
-    body: 'Submitted by reporters in the last 24 hours',
-    time: '2h ago',
+    title: 'Review content queue',
+    body: 'Open posts to review pending and draft stories',
+    time: 'Open now',
     tone: 'info',
     href: '/admin/posts',
   },
   {
     id: 'n2',
-    title: '8 articles need translation',
-    body: 'Bangla → English drafts waiting in the queue',
-    time: '4h ago',
+    title: 'Continue translations',
+    body: 'Check missing or partial BN-EN article translations',
+    time: 'Open now',
     tone: 'accent',
     href: '/admin/translation',
   },
   {
     id: 'n3',
-    title: '3 SEO issues detected',
-    body: 'Recently published articles below score 70',
-    time: '1d ago',
+    title: 'Run SEO review',
+    body: 'Audit metadata quality before publishing updates',
+    time: 'Open now',
     tone: 'warning',
     href: '/admin/seo',
   },
@@ -69,15 +70,36 @@ export default function AdminTopbar({
       ),
     [role]
   );
+  const searchQuickLinks = useMemo<SearchQuickLink[]>(
+    () =>
+      [
+        { id: 'dashboard', title: 'Dashboard', subtitle: 'Stats, traffic, quick actions', href: '/admin/dashboard', keywords: ['overview', 'home', 'stats'] },
+        { id: 'analytics', title: 'Analytics', subtitle: 'Performance and referral trends', href: '/admin/analytics', keywords: ['traffic', 'views', 'sources'] },
+        { id: 'posts', title: 'Posts', subtitle: 'Browse and manage all articles', href: '/admin/posts', keywords: ['articles', 'drafts', 'published'] },
+        { id: 'new-post', title: 'Create Post', subtitle: 'Start a new article draft', href: '/admin/posts/new', keywords: ['new', 'write', 'editor'] },
+        { id: 'ai-writer', title: 'AI Writer', subtitle: 'Generate structured first drafts', href: '/admin/ai-writer', keywords: ['ai', 'draft', 'outline'] },
+        { id: 'translation', title: 'Translation', subtitle: 'Manage BN-EN translation queue', href: '/admin/translation', keywords: ['bangla', 'english', 'translate'] },
+        { id: 'seo', title: 'SEO Center', subtitle: 'Fix metadata and SEO scoring', href: '/admin/seo', keywords: ['meta', 'keyword', 'score'] },
+        { id: 'media', title: 'Media Library', subtitle: 'Upload and organize images', href: '/admin/media', keywords: ['assets', 'image', 'upload'] },
+        { id: 'comments', title: 'Comments', subtitle: 'Moderate reader conversations', href: '/admin/comments', keywords: ['moderation', 'spam', 'approve'] },
+        { id: 'newsletter', title: 'Newsletter', subtitle: 'Subscribers and export', href: '/admin/newsletter', keywords: ['subscribers', 'email', 'csv'] },
+        { id: 'messages', title: 'Messages', subtitle: 'Reader contact inbox', href: '/admin/messages', keywords: ['inbox', 'contact', 'support'] },
+        { id: 'users', title: 'Users & Roles', subtitle: 'Team members and permissions', href: '/admin/users', keywords: ['team', 'role', 'access'] },
+        { id: 'settings', title: 'Settings', subtitle: 'Branding and feature controls', href: '/admin/settings', keywords: ['site config', 'features', 'social'] },
+      ].filter((item) => canAccessAdminPath(role, item.href)),
+    [role]
+  );
   const canOpenSettings = canAccessAdminPath(role, '/admin/settings');
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [defaultLang, setDefaultLang] = useState<'bn' | 'en'>('bn');
   const notifRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+  const unreadCount = visibleNotifications.filter((n) => !readNotificationIds.includes(n.id)).length;
 
-  // ⌘K / Ctrl-K opens the search modal from any admin page.
+  // Cmd/Ctrl+K opens the search modal from any admin page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
@@ -121,9 +143,27 @@ export default function AdminTopbar({
     router.replace('/admin/login');
   };
 
+  const markNotificationRead = (id: string) => {
+    setReadNotificationIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  const markAllNotificationsRead = () => {
+    setReadNotificationIds((prev) => {
+      const merged = new Set(prev);
+      visibleNotifications.forEach((n) => merged.add(n.id));
+      return [...merged];
+    });
+  };
+
   return (
     <>
-    <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} lang={defaultLang} />
+    <SearchModal
+      isOpen={searchOpen}
+      onClose={() => setSearchOpen(false)}
+      lang={defaultLang}
+      scope="admin"
+      quickLinks={searchQuickLinks}
+    />
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-white/85 px-3 backdrop-blur-md sm:px-5 lg:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
@@ -148,17 +188,25 @@ export default function AdminTopbar({
           type="button"
           onClick={() => setSearchOpen(true)}
           aria-label="Search posts, users, settings"
-          className="ui-input flex w-full items-center gap-2 pl-9 pr-12 h-10 rounded-lg text-left text-ink-faint hover:text-ink"
+          className="ui-input relative flex h-10 w-full items-center gap-2 pl-9 pr-12 text-left text-ink-faint hover:text-ink"
         >
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint">
             <Icon.Search size={16} />
           </span>
-          <span className="truncate">Search posts, users, settings…</span>
-          <span className="ui-kbd absolute right-2.5 top-1/2 -translate-y-1/2">⌘K</span>
+          <span className="truncate">Search posts, users, settings...</span>
+          <span className="ui-kbd absolute right-2.5 top-1/2 -translate-y-1/2">Ctrl+K</span>
         </button>
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Open quick search"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-ink-muted hover:bg-app hover:text-ink md:hidden"
+        >
+          <Icon.Search size={17} />
+        </button>
         <Link
           href={`/${defaultLang}`}
           target="_blank"
@@ -179,13 +227,27 @@ export default function AdminTopbar({
             className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-app hover:text-ink"
           >
             <Icon.Bell size={18} />
-            <span className="absolute right-2 top-2 inline-flex h-2 w-2 rounded-full bg-accent ring-2 ring-white" />
+            {unreadCount > 0 ? (
+              <>
+                <span className="absolute right-2 top-2 inline-flex h-2 w-2 rounded-full bg-accent ring-2 ring-white" />
+                <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+                  {Math.min(unreadCount, 9)}
+                </span>
+              </>
+            ) : null}
           </button>
           {notifOpen ? (
             <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] origin-top-right animate-slide-in-right rounded-xl border border-line bg-white shadow-elev">
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <p className="text-sm font-semibold text-ink">Notifications</p>
-                <button className="text-xs text-accent hover:underline">Mark all as read</button>
+                <button
+                  type="button"
+                  onClick={markAllNotificationsRead}
+                  disabled={unreadCount === 0}
+                  className="text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+                >
+                  Mark all as read
+                </button>
               </div>
               <ul className="max-h-80 overflow-y-auto divide-y divide-line">
                 {visibleNotifications.length === 0 ? (
@@ -197,7 +259,10 @@ export default function AdminTopbar({
                   <li key={n.id}>
                     <Link
                       href={n.href ?? '#'}
-                      onClick={() => setNotifOpen(false)}
+                      onClick={() => {
+                        markNotificationRead(n.id);
+                        setNotifOpen(false);
+                      }}
                       className="flex items-start gap-3 px-4 py-3 hover:bg-app"
                     >
                       <span
@@ -228,7 +293,7 @@ export default function AdminTopbar({
               </ul>
               <div className="border-t border-line px-4 py-2.5 text-center">
                 <Link href="/admin/dashboard" className="text-xs text-accent hover:underline">
-                  Open dashboard →
+                  Open dashboard
                 </Link>
               </div>
             </div>
@@ -301,3 +366,4 @@ export default function AdminTopbar({
     </>
   );
 }
+

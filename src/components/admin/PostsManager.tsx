@@ -27,6 +27,7 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
   const { push } = useToast();
   const [status, setStatus] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryId, setCategoryId] = useState<string | 'all'>('all');
   const [translation, setTranslation] = useState<TranslationStatus | 'all'>('all');
   const [sort, setSort] = useState<SortKey>('newest');
@@ -52,11 +53,16 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
   );
 
   useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     postsRepo
       .listPosts({
-        search,
+        search: debouncedSearch,
         status,
         categoryId,
         translation,
@@ -72,11 +78,11 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
     return () => {
       cancelled = true;
     };
-  }, [search, status, categoryId, translation, sort, page]);
+  }, [debouncedSearch, status, categoryId, translation, sort, page]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, status, categoryId, translation, sort]);
+  }, [debouncedSearch, status, categoryId, translation, sort]);
 
   const visibleIds = data.rows.map((r) => r.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
@@ -100,7 +106,15 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
       title: `${selected.length} post${selected.length === 1 ? '' : 's'} → ${next}`,
     });
     setSelected([]);
-    const res = await postsRepo.listPosts({ search, status, categoryId, translation, sort, page, pageSize: PAGE_SIZE });
+    const res = await postsRepo.listPosts({
+      search: debouncedSearch,
+      status,
+      categoryId,
+      translation,
+      sort,
+      page,
+      pageSize: PAGE_SIZE,
+    });
     setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
   };
 
@@ -113,7 +127,15 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
     await postsRepo.bulkDelete(selected);
     push({ tone: 'success', title: `Archived ${selected.length} post${selected.length === 1 ? '' : 's'}` });
     setSelected([]);
-    const res = await postsRepo.listPosts({ search, status, categoryId, translation, sort, page, pageSize: PAGE_SIZE });
+    const res = await postsRepo.listPosts({
+      search: debouncedSearch,
+      status,
+      categoryId,
+      translation,
+      sort,
+      page,
+      pageSize: PAGE_SIZE,
+    });
     setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
   };
 
@@ -122,7 +144,15 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
     await postsRepo.deletePost(id);
     push({ tone: 'success', title: 'Post deleted' });
     setSelected((s) => s.filter((x) => x !== id));
-    const res = await postsRepo.listPosts({ search, status, categoryId, translation, sort, page, pageSize: PAGE_SIZE });
+    const res = await postsRepo.listPosts({
+      search: debouncedSearch,
+      status,
+      categoryId,
+      translation,
+      sort,
+      page,
+      pageSize: PAGE_SIZE,
+    });
     setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
   };
 
@@ -259,11 +289,17 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={row.cover_image_url}
-                            alt=""
-                            className="h-10 w-14 shrink-0 rounded-md object-cover"
-                          />
+                          {row.cover_image_url?.trim() ? (
+                            <img
+                              src={row.cover_image_url}
+                              alt=""
+                              className="h-10 w-14 shrink-0 rounded-md object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-14 shrink-0 items-center justify-center rounded-md bg-app text-[10px] text-ink-faint">
+                              No image
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <Link
                               href={`/admin/posts/${row.id}`}

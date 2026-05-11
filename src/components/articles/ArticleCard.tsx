@@ -1,8 +1,13 @@
-import Link from 'next/link';
-import type { Article } from '@/lib/types';
-import type { Lang } from '@/lib/types';
+﻿import Link from 'next/link';
+import type { Article, Lang } from '@/lib/types';
 import Badge from '@/components/common/Badge';
-import { formatDate, getArticleTitle, getArticleSubtitle, getCategoryName, getAuthorName } from '@/lib/i18n';
+import {
+  formatDate,
+  getArticleTitle,
+  getArticleSubtitle,
+  getCategoryName,
+  getAuthorName,
+} from '@/lib/i18n';
 
 interface ArticleCardProps {
   article: Article;
@@ -19,20 +24,32 @@ export default function ArticleCard({ article, lang, variant = 'featured' }: Art
   const href = `/${lang}/news/${article.slug}`;
   const isBn = lang === 'bn';
   const fontClass = isBn ? 'font-bangla' : '';
+  const imageSrc = article.image?.trim() || null;
+
+  const ImageOrPlaceholder = ({
+    className,
+    hoverClass = '',
+  }: {
+    className: string;
+    hoverClass?: string;
+  }) =>
+    imageSrc ? (
+      <img src={imageSrc} alt={title} className={`${className} ${hoverClass}`.trim()} />
+    ) : (
+      <div className={`${className} flex items-center justify-center bg-gray-200 text-[11px] text-gray-500`}>
+        No image
+      </div>
+    );
 
   if (variant === 'lead') {
     return (
-      <article className="group relative bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+      <article className="group relative overflow-hidden rounded-xl bg-white shadow-sm transition-shadow hover:shadow-md">
         <Link href={href}>
           <div className="relative aspect-[16/9] overflow-hidden bg-gray-200">
-            <img
-              src={article.image}
-              alt={title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
+            <ImageOrPlaceholder className="h-full w-full object-cover" hoverClass="group-hover:scale-105 transition-transform duration-300" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             {article.breaking && (
-              <div className="absolute top-3 left-3">
+              <div className="absolute left-3 top-3">
                 <Badge variant="breaking">{isBn ? 'ব্রেকিং' : 'BREAKING'}</Badge>
               </div>
             )}
@@ -40,11 +57,11 @@ export default function ArticleCard({ article, lang, variant = 'featured' }: Art
               <div className="mb-2">
                 <Badge color={article.category.color}>{category}</Badge>
               </div>
-              <h2 className={`text-white text-xl md:text-2xl font-bold leading-tight mb-2 ${fontClass}`}>
+              <h2 className={`mb-2 text-xl font-bold leading-tight text-white md:text-2xl ${fontClass}`}>
                 {title}
               </h2>
-              <p className={`text-gray-300 text-sm line-clamp-2 hidden md:block ${fontClass}`}>{subtitle}</p>
-              <div className={`flex items-center gap-3 mt-3 text-xs text-gray-400 ${fontClass}`}>
+              <p className={`hidden line-clamp-2 text-sm text-gray-300 md:block ${fontClass}`}>{subtitle}</p>
+              <div className={`mt-3 flex items-center gap-3 text-xs text-gray-400 ${fontClass}`}>
                 <span>{author}</span>
                 <span>·</span>
                 <span>{date}</span>
@@ -60,20 +77,24 @@ export default function ArticleCard({ article, lang, variant = 'featured' }: Art
 
   if (variant === 'horizontal') {
     return (
-      <article className="group flex gap-4 py-3 border-b border-brand-border last:border-0">
-        <Link href={href} className="flex-shrink-0">
-          <div className="w-24 h-18 sm:w-32 sm:h-24 bg-gray-200 rounded-lg overflow-hidden">
-            <img src={article.image} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+      <article className="group flex gap-4 border-b border-brand-border py-3 last:border-0">
+        <Link href={href} className="shrink-0">
+          <div className="h-18 w-24 overflow-hidden rounded-lg bg-gray-200 sm:h-24 sm:w-32">
+            <ImageOrPlaceholder className="h-full w-full object-cover" hoverClass="group-hover:scale-105 transition-transform duration-300" />
           </div>
         </Link>
-        <div className="flex-1 min-w-0">
-          <Badge color={article.category.color} className="mb-1.5">{category}</Badge>
+        <div className="min-w-0 flex-1">
+          <Badge color={article.category.color} className="mb-1.5">
+            {category}
+          </Badge>
           <Link href={href}>
-            <h3 className={`font-semibold text-brand-text text-sm leading-snug line-clamp-2 hover:text-primary transition-colors ${fontClass}`}>
+            <h3 className={`line-clamp-2 text-sm font-semibold leading-snug text-brand-text transition-colors hover:text-primary ${fontClass}`}>
               {title}
             </h3>
           </Link>
-          <p className={`text-xs text-brand-muted mt-1 ${fontClass}`}>{date} · {author}</p>
+          <p className={`mt-1 text-xs text-brand-muted ${fontClass}`}>
+            {date} · {author}
+          </p>
         </div>
       </article>
     );
@@ -81,17 +102,17 @@ export default function ArticleCard({ article, lang, variant = 'featured' }: Art
 
   if (variant === 'compact') {
     return (
-      <article className="group flex gap-3 py-2.5 border-b border-brand-border last:border-0">
-        <div className="flex-shrink-0 w-16 h-12 bg-gray-200 rounded overflow-hidden">
-          <img src={article.image} alt={title} className="w-full h-full object-cover" />
+      <article className="group flex gap-3 border-b border-brand-border py-2.5 last:border-0">
+        <div className="h-12 w-16 shrink-0 overflow-hidden rounded bg-gray-200">
+          <ImageOrPlaceholder className="h-full w-full object-cover" />
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <Link href={href}>
-            <h4 className={`text-xs font-medium text-brand-text line-clamp-2 hover:text-primary transition-colors ${fontClass}`}>
+            <h4 className={`line-clamp-2 text-xs font-medium text-brand-text transition-colors hover:text-primary ${fontClass}`}>
               {title}
             </h4>
           </Link>
-          <p className="text-xs text-brand-muted mt-0.5">{date}</p>
+          <p className="mt-0.5 text-xs text-brand-muted">{date}</p>
         </div>
       </article>
     );
@@ -99,50 +120,45 @@ export default function ArticleCard({ article, lang, variant = 'featured' }: Art
 
   if (variant === 'sidebar') {
     return (
-      <article className="group flex gap-3 items-start">
-        <div className="flex-shrink-0 w-16 h-16 bg-gray-200 rounded-lg overflow-hidden">
-          <img src={article.image} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+      <article className="group flex items-start gap-3">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-200">
+          <ImageOrPlaceholder className="h-full w-full object-cover" hoverClass="group-hover:scale-105 transition-transform duration-200" />
         </div>
         <div className="flex-1">
           <Link href={href}>
-            <p className={`text-sm font-medium text-brand-text line-clamp-3 hover:text-primary transition-colors leading-snug ${fontClass}`}>
+            <p className={`line-clamp-3 text-sm font-medium leading-snug text-brand-text transition-colors hover:text-primary ${fontClass}`}>
               {title}
             </p>
           </Link>
-          <p className={`text-xs text-brand-muted mt-1 ${fontClass}`}>{date}</p>
+          <p className={`mt-1 text-xs text-brand-muted ${fontClass}`}>{date}</p>
         </div>
       </article>
     );
   }
 
-  // Default: featured card
   return (
-    <article className="group bg-white rounded-xl overflow-hidden border border-brand-border hover:shadow-md transition-shadow">
+    <article className="group overflow-hidden rounded-xl border border-brand-border bg-white transition-shadow hover:shadow-md">
       <Link href={href}>
         <div className="relative aspect-[16/10] overflow-hidden bg-gray-200">
-          <img
-            src={article.image}
-            alt={title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
+          <ImageOrPlaceholder className="h-full w-full object-cover" hoverClass="group-hover:scale-105 transition-transform duration-300" />
           {article.breaking && (
-            <div className="absolute top-2 left-2">
+            <div className="absolute left-2 top-2">
               <Badge variant="breaking">{isBn ? 'ব্রেকিং' : 'BREAKING'}</Badge>
             </div>
           )}
         </div>
       </Link>
       <div className="p-4">
-        <div className="flex items-center justify-between mb-2">
+        <div className="mb-2 flex items-center justify-between">
           <Badge color={article.category.color}>{category}</Badge>
           <span className={`text-xs text-brand-muted ${fontClass}`}>{date}</span>
         </div>
         <Link href={href}>
-          <h3 className={`font-bold text-brand-text leading-snug mb-2 line-clamp-2 hover:text-primary transition-colors ${fontClass}`}>
+          <h3 className={`mb-2 line-clamp-2 font-bold leading-snug text-brand-text transition-colors hover:text-primary ${fontClass}`}>
             {title}
           </h3>
         </Link>
-        <p className={`text-sm text-brand-muted line-clamp-2 mb-3 ${fontClass}`}>{subtitle}</p>
+        <p className={`mb-3 line-clamp-2 text-sm text-brand-muted ${fontClass}`}>{subtitle}</p>
         <div className={`flex items-center justify-between text-xs text-brand-muted ${fontClass}`}>
           <span>{author}</span>
           <span>{isBn ? `${article.readingTimeBn} মিনিট` : `${article.readingTimeEn} min read`}</span>

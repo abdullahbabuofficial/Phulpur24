@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAdminWorkspace } from '@/components/admin/AdminWorkspaceContext';
 import AdminSidebar from '@/components/layout/AdminSidebar';
 import AdminTopbar from '@/components/layout/AdminTopbar';
@@ -14,6 +15,9 @@ interface AdminPageShellProps {
 export default function AdminPageShell({ title, children }: AdminPageShellProps) {
   const { profile } = useAdminWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const supabaseConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
   const [user, setUser] = useState<{ name: string; email: string }>({
     name: 'Admin',
     email: 'admin@phulpur24.com',
@@ -80,6 +84,14 @@ export default function AdminPageShell({ title, children }: AdminPageShellProps)
             userName={user.name}
             userEmail={user.email}
           />
+          {!supabaseConfigured ? (
+            <div className="mx-4 mt-4 rounded-lg border border-warning bg-warning-soft px-4 py-3 text-sm text-warning-text sm:mx-6 lg:mx-8">
+              Supabase is not configured in this environment. Live admin data is currently unavailable.
+              <Link href="/admin/diagnostic" className="ml-2 font-medium underline underline-offset-2">
+                Run diagnostics
+              </Link>
+            </div>
+          ) : null}
           <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">{children}</main>
         </div>
       </div>

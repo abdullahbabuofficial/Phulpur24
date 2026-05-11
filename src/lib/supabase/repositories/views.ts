@@ -53,24 +53,26 @@ export async function getLastSevenUtcDayViewCounts(client?: SupabaseClient): Pro
     0,
     0
   );
-  const ranges: { start: string; end: string }[] = [];
-  for (let i = 0; i < 7; i++) {
-    const dayStart = new Date(startUtcMs + i * 86_400_000);
-    const dayEnd = new Date(startUtcMs + (i + 1) * 86_400_000);
-    ranges.push({ start: dayStart.toISOString(), end: dayEnd.toISOString() });
+  const startIso = new Date(startUtcMs).toISOString();
+  const endIso = new Date(startUtcMs + 7 * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from('page_views')
+    .select('viewed_at')
+    .gte('viewed_at', startIso)
+    .lt('viewed_at', endIso)
+    .limit(200_000);
+
+  if (error || !data?.length) return [0, 0, 0, 0, 0, 0, 0];
+
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  for (const row of data) {
+    const ts = Date.parse(row.viewed_at);
+    if (Number.isNaN(ts)) continue;
+    const idx = Math.floor((ts - startUtcMs) / 86_400_000);
+    if (idx >= 0 && idx < 7) buckets[idx] += 1;
   }
 
-  const counts = await Promise.all(
-    ranges.map(({ start, end }) =>
-      supabase
-        .from('page_views')
-        .select('id', { count: 'exact', head: true })
-        .gte('viewed_at', start)
-        .lt('viewed_at', end)
-    )
-  );
-
-  return counts.map((r) => r.count ?? 0);
+  return buckets;
 }
 
 function labelReferrer(raw: string | null): string {
