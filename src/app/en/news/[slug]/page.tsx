@@ -9,10 +9,12 @@ import Breadcrumb from '@/components/common/Breadcrumb';
 import Badge from '@/components/common/Badge';
 import NewsletterSignup from '@/components/common/NewsletterSignup';
 import AdSlot from '@/components/common/AdSlot';
+import ArticleMetaRail from '@/components/articles/ArticleMetaRail';
 import {
   getAllPublishedSlugs,
   getArticlePageData,
   getArticleBySlug,
+  toAuthorRouteSlug,
 } from '@/lib/data';
 import { formatDate } from '@/lib/i18n';
 import { getPublicSiteConfig } from '@/lib/get-public-site-config';
@@ -106,28 +108,17 @@ export default async function EnArticlePage({ params }: Props) {
                 <p className="text-lg text-brand-muted">{article.subtitleEn}</p>
               </div>
 
-              <div className="px-6 pb-4 flex flex-wrap items-center gap-4 text-sm text-brand-muted border-b border-brand-border">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold">
-                    {article.author.nameEn.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium text-brand-text">{article.author.nameEn}</p>
-                    <p className="text-xs">{article.author.role}</p>
-                  </div>
-                </div>
-                <span>|</span>
-                <span>{date}</span>
-                <span>|</span>
-                <span>{article.readingTimeEn} min read</span>
-                <span>|</span>
-                <span>{article.views.toLocaleString()} views</span>
-                <div className="flex items-center gap-2 ml-auto">
-                  <button className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">FB</button>
-                  <button className="text-xs px-2 py-1 bg-sky-500 text-white rounded hover:bg-sky-600">TW</button>
-                  <button className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">WA</button>
-                </div>
-              </div>
+              <ArticleMetaRail
+                lang="en"
+                authorName={article.author.nameEn}
+                authorRole={article.author.role}
+                authorHref={`/en/author/${toAuthorRouteSlug(article.author.id, article.author.nameEn)}`}
+                dateLabel={date}
+                readingTimeLabel={`${article.readingTimeEn} min read`}
+                viewsLabel={`${article.views.toLocaleString()} views`}
+                articleTitle={article.titleEn}
+                articlePath={`/en/news/${article.slug}`}
+              />
 
               <div className="relative aspect-[16/9] overflow-hidden mx-6 mt-4 rounded-lg">
                 {article.image?.trim() ? (

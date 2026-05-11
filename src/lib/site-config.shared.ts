@@ -52,8 +52,8 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   siteUrl: 'https://phulpur24.com',
   defaultLanguage: 'bn',
   branding: {
-    logoUrl: '',
-    logoDarkUrl: '',
+    logoUrl: '/phulpur24_transparent_png_header_footer_900w.png',
+    logoDarkUrl: '/phulpur24_transparent_png_header_footer_900w.png',
     logoAlt: 'Phulpur24',
     faviconUrl: '',
   },

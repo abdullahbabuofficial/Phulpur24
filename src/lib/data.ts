@@ -141,6 +141,31 @@ export interface ArticlePageData {
   categories: Category[];
 }
 
+export interface AuthorPageData {
+  author: Author | null;
+  articles: Article[];
+  popular: Article[];
+  categories: Category[];
+}
+
+function sanitizeSlugText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function toAuthorRouteSlug(authorId: string, authorNameEn: string): string {
+  const tail = sanitizeSlugText(authorNameEn) || 'reporter';
+  return `${authorId}--${tail}`;
+}
+
+export function getAuthorIdFromRouteSlug(slug: string): string {
+  const marker = slug.indexOf('--');
+  if (marker === -1) return slug;
+  return slug.slice(0, marker);
+}
+
 function uniqueArticles(rows: Article[]): Article[] {
   const seen = new Set<string>();
   const out: Article[] = [];
@@ -254,6 +279,13 @@ const getCategoryPageDataCached = unstable_cache(
 export async function getAuthors(): Promise<Author[]> {
   const { data } = await supabase.from('authors').select('*').order('name_en');
   return ((data ?? []) as AuthorRow[]).map(toAuthor);
+}
+
+export async function getAuthorById(authorId: string): Promise<Author | null> {
+  const { data, error } = await supabase.from('authors').select('*').eq('id', authorId).maybeSingle();
+  if (error) console.error('[data.getAuthorById]', error);
+  if (!data) return null;
+  return toAuthor(data as AuthorRow);
 }
 
 export async function getTags(): Promise<Tag[]> {
@@ -396,6 +428,44 @@ export async function getArticlePageData(slug: string): Promise<ArticlePageData>
   ]);
 
   return { article, related, popular, categories };
+}
+
+export async function getArticlesByAuthorId(authorId: string, limit = 20): Promise<Article[]> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('articles')
+    .select(ARTICLE_SELECT)
+    .eq('status', 'published')
+    .lte('published_at', nowIso)
+    .eq('author_id', authorId)
+    .order('published_at', { ascending: false })
+    .limit(limit);
+
+  if (error) console.error('[data.getArticlesByAuthorId]', error);
+  return ((data ?? []) as Record<string, unknown>[]).map(flatten).map(toArticle);
+}
+
+export async function getAuthorPageData(slug: string): Promise<AuthorPageData> {
+  const authorId = getAuthorIdFromRouteSlug(slug);
+  const [author, articles, popular, categories] = await Promise.all([
+    getAuthorById(authorId),
+    getArticlesByAuthorId(authorId, 24),
+    getPopularArticlesCached(5),
+    getCategoriesCached(),
+  ]);
+
+  if (!author) return { author: null, articles: [], popular: [], categories };
+  return { author, articles, popular, categories };
+}
+
+export async function getAllAuthorRouteSlugs(): Promise<{ slug: string }[]> {
+  const { data, error } = await supabase.from('authors').select('id,name_en').order('name_en');
+  if (error) {
+    console.error('[data.getAllAuthorRouteSlugs]', error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<Pick<AuthorRow, 'id' | 'name_en'>>;
+  return rows.map((row) => ({ slug: toAuthorRouteSlug(row.id, row.name_en) }));
 }
 
 export async function searchPublishedArticles(query: string): Promise<Article[]> {

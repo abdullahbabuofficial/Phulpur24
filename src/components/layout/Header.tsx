@@ -4,12 +4,27 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import SearchModal from '@/components/common/SearchModal';
 import HeaderSubscribe from '@/components/common/HeaderSubscribe';
+import AdSlot from '@/components/common/AdSlot';
 import { useSiteConfig } from '@/hooks/useSiteConfig';
-import { t } from '@/lib/i18n';
+import { canRenderAdSlot } from '@/lib/ads';
 import type { Lang } from '@/lib/types';
 
 interface HeaderProps {
   lang: Lang;
+}
+
+const DEFAULT_BRAND_LOGO = '/phulpur24_transparent_png_header_footer_900w.png';
+
+function isRenderableLogoUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  const candidate = value.trim();
+  if (candidate.startsWith('/')) return true;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function isValidExternalUrl(value: string | null | undefined): value is string {
@@ -34,7 +49,9 @@ function getConfiguredLogo(config: unknown, fallbackName: string): { src: string
     logo.url,
   ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
 
-  if (!isValidExternalUrl(candidateSrc)) return null;
+  const resolvedSrc = isRenderableLogoUrl(candidateSrc)
+    ? candidateSrc.trim()
+    : DEFAULT_BRAND_LOGO;
 
   const candidateAlt = [
     branding.logoAlt,
@@ -45,7 +62,7 @@ function getConfiguredLogo(config: unknown, fallbackName: string): { src: string
   ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
 
   return {
-    src: candidateSrc.trim(),
+    src: resolvedSrc,
     alt: candidateAlt?.trim() || `${fallbackName} logo`,
   };
 }
@@ -65,13 +82,6 @@ export default function Header({ lang }: HeaderProps) {
   const oppLang = lang === 'bn' ? 'en' : 'bn';
   const oppLabel = lang === 'bn' ? 'EN' : 'বাংলা';
   const searchLabel = lang === 'bn' ? 'অনুসন্ধান খুলুন' : 'Open search';
-  const adLabel = lang === 'bn' ? 'বিজ্ঞাপন · 728×90' : 'Advertisement · 728×90';
-
-  const tagline =
-    lang === 'bn'
-      ? config.taglineBn.trim() || t(lang, 'slogan')
-      : config.taglineEn.trim() || t(lang, 'slogan');
-
   type SocialKind = 'facebook' | 'twitter' | 'youtube' | 'instagram';
 
   const socialItems = useMemo(() => {
@@ -86,6 +96,7 @@ export default function Header({ lang }: HeaderProps) {
 
   const brandName = config.siteName.trim() || 'Phulpur24';
   const logo = getConfiguredLogo(config, brandName);
+  const showHeaderAd = canRenderAdSlot(config, '728x90');
 
   return (
     <>
@@ -135,34 +146,20 @@ export default function Header({ lang }: HeaderProps) {
       <header className="border-b border-brand-border bg-white shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <Link href={`/${lang}`} className="flex min-w-0 items-center gap-2">
-            {logo ? (
-              <div className="shrink-0 rounded-md border border-brand-border bg-white px-2 py-1">
-                <img
-                  src={logo.src}
-                  alt={logo.alt}
-                  className="h-9 w-auto max-w-[11rem] object-contain sm:h-11 sm:max-w-[14rem]"
-                  loading="eager"
-                  decoding="async"
-                />
-              </div>
-            ) : (
-              <div
-                className="max-w-[13rem] shrink-0 truncate rounded bg-primary px-2.5 py-1.5 text-base font-black leading-none tracking-tight text-white sm:max-w-[16rem] sm:px-3 sm:text-lg"
-                title={brandName}
-              >
-                {brandName}
-              </div>
-            )}
-            <div className="hidden min-w-0 sm:block">
-              <p className={`truncate text-xs leading-tight text-brand-muted ${lang === 'bn' ? 'font-bangla' : ''}`}>{tagline}</p>
+            <div className="shrink-0 rounded-md border border-brand-border bg-white px-2 py-1">
+              <img
+                src={(logo?.src ?? DEFAULT_BRAND_LOGO)}
+                alt={(logo?.alt ?? `${brandName} logo`)}
+                className="h-10 w-auto max-w-[12rem] object-contain sm:h-12 sm:max-w-[15rem] lg:h-14 lg:max-w-[18rem]"
+                loading="eager"
+                decoding="async"
+              />
             </div>
           </Link>
 
-          {config.features.enableAds ? (
+          {showHeaderAd ? (
             <div className="hidden flex-1 items-center justify-center px-4 lg:flex">
-              <div className="w-full max-w-xl rounded border border-dashed border-gray-300 bg-gray-100 px-8 py-3 text-xs text-gray-400">
-                <p className={lang === 'bn' ? 'font-bangla' : ''}>{adLabel}</p>
-              </div>
+              <AdSlot size="728x90" className="mx-auto w-full max-w-xl" />
             </div>
           ) : (
             <div className="hidden flex-1 lg:block" aria-hidden="true" />

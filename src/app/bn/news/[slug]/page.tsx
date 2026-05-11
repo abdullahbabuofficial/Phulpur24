@@ -9,10 +9,12 @@ import Breadcrumb from '@/components/common/Breadcrumb';
 import Badge from '@/components/common/Badge';
 import NewsletterSignup from '@/components/common/NewsletterSignup';
 import AdSlot from '@/components/common/AdSlot';
+import ArticleMetaRail from '@/components/articles/ArticleMetaRail';
 import {
   getAllPublishedSlugs,
   getArticlePageData,
   getArticleBySlug,
+  toAuthorRouteSlug,
 } from '@/lib/data';
 import { formatDate } from '@/lib/i18n';
 import { getPublicSiteConfig } from '@/lib/get-public-site-config';
@@ -109,29 +111,17 @@ export default async function BnArticlePage({ params }: Props) {
                 <p className="text-lg text-brand-muted font-bangla">{article.subtitleBn}</p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 border-b border-brand-border px-6 pb-4 text-sm text-brand-muted">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                    {article.author.nameBn.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium text-brand-text font-bangla">{article.author.nameBn}</p>
-                    <p className="text-xs font-bangla">{article.author.role}</p>
-                  </div>
-                </div>
-                <span className="text-brand-border">|</span>
-                <span className="font-bangla">{date}</span>
-                <span className="text-brand-border">|</span>
-                <span className="font-bangla">{article.readingTimeBn} মিনিট পড়া</span>
-                <span className="text-brand-border">|</span>
-                <span className="font-bangla">{article.views.toLocaleString()} বার দেখা হয়েছে</span>
-
-                <div className="ml-auto flex items-center gap-2">
-                  <button className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">FB</button>
-                  <button className="rounded bg-sky-500 px-2 py-1 text-xs text-white hover:bg-sky-600">TW</button>
-                  <button className="rounded bg-green-600 px-2 py-1 text-xs text-white hover:bg-green-700">WA</button>
-                </div>
-              </div>
+              <ArticleMetaRail
+                lang="bn"
+                authorName={article.author.nameBn}
+                authorRole={article.author.role}
+                authorHref={`/bn/author/${toAuthorRouteSlug(article.author.id, article.author.nameEn)}`}
+                dateLabel={date}
+                readingTimeLabel={`${article.readingTimeBn} মিনিট পড়া`}
+                viewsLabel={`${article.views.toLocaleString()} বার দেখা হয়েছে`}
+                articleTitle={article.titleBn}
+                articlePath={`/bn/news/${article.slug}`}
+              />
 
               <div className="relative mx-6 mt-4 aspect-[16/9] overflow-hidden rounded-lg">
                 {article.image?.trim() ? (
