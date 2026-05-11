@@ -10,7 +10,7 @@ export async function listUsers() {
 
 export async function updateUser(
   id: string,
-  patch: Partial<Pick<ProfileRow, 'full_name' | 'email' | 'role' | 'status'>>
+  patch: Partial<Pick<ProfileRow, 'full_name' | 'email' | 'role' | 'status' | 'avatar_url'>>
 ) {
   const supabase = getSupabase();
   if (patch.email) patch.email = patch.email.toLowerCase();

@@ -164,12 +164,14 @@ export async function getHomePageData(poolLimit = 80): Promise<HomePageData> {
 
 const getHomePageDataCached = unstable_cache(
   async (poolLimit: number): Promise<HomePageData> => {
+  const nowIso = new Date().toISOString();
   const [categoriesRes, publishedRes] = await Promise.all([
     supabase.from('categories').select('*').order('sort_order'),
     supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('status', 'published')
+      .lte('published_at', nowIso)
       .order('published_at', { ascending: false })
       .limit(poolLimit),
   ]);
@@ -224,6 +226,7 @@ export async function getCategoryPageData(slug: string, limit?: number): Promise
 
 const getCategoryPageDataCached = unstable_cache(
   async (slug: string, limit?: number): Promise<CategoryPageData> => {
+    const nowIso = new Date().toISOString();
     const categories = await getCategoriesCached();
     const category = categories.find((c) => c.slug === slug) ?? null;
     if (!category) {
@@ -234,6 +237,7 @@ const getCategoryPageDataCached = unstable_cache(
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('status', 'published')
+      .lte('published_at', nowIso)
       .eq('category_id', category.id)
       .order('published_at', { ascending: false });
     if (typeof limit === 'number') query = query.limit(limit);
@@ -258,10 +262,12 @@ export async function getTags(): Promise<Tag[]> {
 }
 
 export async function getFeaturedArticles(limit = 5): Promise<Article[]> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_SELECT)
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .eq('featured', true)
     .order('published_at', { ascending: false })
     .limit(limit);
@@ -270,10 +276,12 @@ export async function getFeaturedArticles(limit = 5): Promise<Article[]> {
 }
 
 export async function getLatestArticles(limit = 10): Promise<Article[]> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_SELECT)
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .order('published_at', { ascending: false })
     .limit(limit);
   if (error) console.error('[data.getLatestArticles]', error);
@@ -286,10 +294,12 @@ export async function getPopularArticles(limit = 5): Promise<Article[]> {
 
 const getPopularArticlesCached = unstable_cache(
   async (limit: number): Promise<Article[]> => {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('status', 'published')
+      .lte('published_at', nowIso)
       .order('views', { ascending: false })
       .limit(limit);
     if (error) console.error('[data.getPopularArticles]', error);
@@ -300,6 +310,7 @@ const getPopularArticlesCached = unstable_cache(
 );
 
 export async function getArticlesByCategory(categorySlug: string, limit?: number): Promise<Article[]> {
+  const nowIso = new Date().toISOString();
   // Resolve slug to id first
   const { data: cat } = await supabase
     .from('categories')
@@ -312,6 +323,7 @@ export async function getArticlesByCategory(categorySlug: string, limit?: number
     .from('articles')
     .select(ARTICLE_SELECT)
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .eq('category_id', cat.id)
     .order('published_at', { ascending: false });
   if (typeof limit === 'number') query = query.limit(limit);
@@ -332,11 +344,13 @@ export async function getArticleBySlug(slug: string): Promise<Article | null> {
 
 const getArticleBySlugCached = unstable_cache(
   async (slug: string): Promise<Article | null> => {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('slug', slug)
       .eq('status', 'published')
+      .lte('published_at', nowIso)
       .maybeSingle();
     if (error) console.error('[data.getArticleBySlug]', error);
     if (!data) return null;
@@ -352,10 +366,12 @@ export async function getRelatedArticles(article: Article, limit = 4): Promise<A
 
 const getRelatedArticlesCached = unstable_cache(
   async (categoryId: string, articleId: string, limit: number): Promise<Article[]> => {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('status', 'published')
+      .lte('published_at', nowIso)
       .eq('category_id', categoryId)
       .neq('id', articleId)
       .order('published_at', { ascending: false })
@@ -385,11 +401,13 @@ export async function getArticlePageData(slug: string): Promise<ArticlePageData>
 export async function searchPublishedArticles(query: string): Promise<Article[]> {
   const q = query.trim();
   if (!q) return [];
+  const nowIso = new Date().toISOString();
   const wildcard = `%${q}%`;
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_SELECT)
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .or(
       `title_bn.ilike.${wildcard},title_en.ilike.${wildcard},subtitle_bn.ilike.${wildcard},subtitle_en.ilike.${wildcard},slug.ilike.${wildcard}`
     )
@@ -400,15 +418,18 @@ export async function searchPublishedArticles(query: string): Promise<Article[]>
 }
 
 export async function getAllPublishedSlugs(): Promise<{ slug: string }[]> {
-  const { data } = await supabase.from('articles').select('slug').eq('status', 'published');
+  const nowIso = new Date().toISOString();
+  const { data } = await supabase.from('articles').select('slug').eq('status', 'published').lte('published_at', nowIso);
   return ((data ?? []) as Pick<ArticleRow, 'slug'>[]).map((r) => ({ slug: r.slug }));
 }
 
 export async function getBreakingNewsItems(): Promise<{ bn: string[]; en: string[] }> {
+  const nowIso = new Date().toISOString();
   const { data } = await supabase
     .from('articles')
     .select('title_bn, title_en')
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .eq('breaking', true)
     .order('published_at', { ascending: false })
     .limit(6);

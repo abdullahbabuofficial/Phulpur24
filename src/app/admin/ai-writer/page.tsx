@@ -87,16 +87,32 @@ export default function AIWriterPage() {
         },
         body: JSON.stringify({ topic: topic.trim(), keywords: keywords.trim(), tone, language: lang }),
       });
-      const json = (await res.json()) as { ok: boolean; draft?: string; mode?: string; error?: string };
+      const json = (await res.json()) as {
+        ok: boolean;
+        draft?: string;
+        mode?: string;
+        provider?: string;
+        model?: string;
+        warning?: string;
+        error?: string;
+      };
       if (!json.ok || !json.draft) {
         throw new Error(json.error ?? 'Generation failed');
       }
       setDraft(json.draft);
-      push({
-        tone: 'success',
-        title: json.mode === 'live' ? 'Draft generated (Claude)' : 'Draft generated (template)',
-        description: json.mode === 'fallback' ? 'Set ANTHROPIC_API_KEY in .env.local for real AI output.' : undefined,
-      });
+      if (json.mode === 'live') {
+        push({
+          tone: 'success',
+          title: `Draft generated (${json.provider ?? 'live model'})`,
+          description: json.model ? `Model: ${json.model}` : undefined,
+        });
+      } else {
+        push({
+          tone: 'warning',
+          title: 'Draft generated (fallback template)',
+          description: json.warning ?? 'Live provider unavailable; using deterministic fallback.',
+        });
+      }
     } catch (err) {
       // Fallback to client-side templates if the route itself fails.
       const t = topic.trim();

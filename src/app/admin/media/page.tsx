@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/admin/ui/EmptyState';
 import { Tabs } from '@/components/admin/ui/Tabs';
 import { Icon } from '@/components/admin/ui/Icon';
 import { useToast } from '@/components/admin/ui/Toast';
-import { getAdminSession } from '@/components/admin/adminAuth';
 import { media as mediaRepo } from '@/lib/supabase';
 import type { MediaAssetRow, MediaType } from '@/lib/supabase/types';
 
@@ -46,26 +45,53 @@ export default function MediaPage() {
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
-    const uploadedBy = getAdminSession()?.name ?? 'Editor';
     let ok = 0;
     let fail = 0;
+    let optimizedCount = 0;
     let lastNewId: string | null = null;
+
     for (const file of Array.from(files)) {
-      const res = await mediaRepo.uploadFileToStorage(file, uploadedBy);
-      if (res.error) {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('optimizeImagesToWebp', 'true');
+      form.append('webpQuality', '0.82');
+      form.append('maxImageDimension', '2560');
+      const uploadRes = await fetch('/api/admin/media/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const upload = (await uploadRes.json()) as {
+        ok: boolean;
+        data?: MediaAssetRow;
+        meta?: { optimized?: boolean };
+        error?: string;
+      };
+      if (!uploadRes.ok || !upload.ok || !upload.data) {
         fail++;
-        push({ tone: 'error', title: `${file.name}`, description: res.error.message });
-      } else if (res.data) {
+        push({
+          tone: 'error',
+          title: file.name,
+          description: upload.error ?? 'Upload failed',
+        });
+      } else {
         ok++;
-        lastNewId = res.data.id;
+        if (upload.meta?.optimized) optimizedCount++;
+        lastNewId = upload.data.id;
       }
     }
+
     setUploading(false);
     if (ok > 0) {
       push({
         tone: 'success',
         title: `${ok} file${ok === 1 ? '' : 's'} uploaded to storage`,
-        description: fail > 0 ? `${fail} failed — see toasts above.` : 'Public URLs are ready to paste into posts.',
+        description:
+          fail > 0
+            ? `${fail} failed - see toasts above.`
+            : optimizedCount > 0
+            ? `${optimizedCount} image${optimizedCount === 1 ? '' : 's'} optimized automatically.`
+            : 'Public URLs are ready to paste into posts.',
       });
     }
     if (lastNewId) setSelectedId(lastNewId);

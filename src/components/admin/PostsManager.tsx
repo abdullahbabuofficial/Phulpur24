@@ -18,7 +18,7 @@ import type {
 } from '@/lib/supabase/types';
 import { posts as postsRepo } from '@/lib/supabase';
 
-type StatusFilter = PostStatus | 'all';
+type StatusFilter = PostStatus | 'all' | 'scheduled';
 type SortKey = 'newest' | 'oldest' | 'most-views' | 'best-seo';
 
 const PAGE_SIZE = 10;
@@ -45,6 +45,7 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
     () => [
       { id: 'all' as StatusFilter, label: 'All' },
       { id: 'published' as StatusFilter, label: 'Published' },
+      { id: 'scheduled' as StatusFilter, label: 'Scheduled' },
       { id: 'draft' as StatusFilter, label: 'Drafts' },
       { id: 'pending' as StatusFilter, label: 'Pending' },
       { id: 'archived' as StatusFilter, label: 'Archived' },
@@ -95,17 +96,7 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
       allVisibleSelected ? cur.filter((id) => !visibleIds.includes(id)) : Array.from(new Set([...cur, ...visibleIds]))
     );
 
-  const handleBulk = async (next: PostStatus) => {
-    if (selected.length === 0) {
-      push({ tone: 'warning', title: 'Pick at least one post', description: 'Select rows in the table first.' });
-      return;
-    }
-    await postsRepo.bulkUpdateStatus(selected, next);
-    push({
-      tone: 'success',
-      title: `${selected.length} post${selected.length === 1 ? '' : 's'} → ${next}`,
-    });
-    setSelected([]);
+  const refreshList = async () => {
     const res = await postsRepo.listPosts({
       search: debouncedSearch,
       status,
@@ -116,6 +107,24 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
       pageSize: PAGE_SIZE,
     });
     setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
+  };
+
+  const handleBulk = async (next: PostStatus) => {
+    if (selected.length === 0) {
+      push({ tone: 'warning', title: 'Pick at least one post', description: 'Select rows in the table first.' });
+      return;
+    }
+    const updateResult = await postsRepo.bulkUpdateStatus(selected, next);
+    if (updateResult.error) {
+      push({ tone: 'error', title: 'Bulk update failed', description: updateResult.error.message });
+      return;
+    }
+    push({
+      tone: 'success',
+      title: `${selected.length} post${selected.length === 1 ? '' : 's'} -> ${next}`,
+    });
+    setSelected([]);
+    await refreshList();
   };
 
   const handleBulkDelete = async () => {
@@ -124,36 +133,37 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
       return;
     }
     if (!confirm(`Archive ${selected.length} post${selected.length === 1 ? '' : 's'}? They can be restored from the Archived tab.`)) return;
-    await postsRepo.bulkDelete(selected);
+    const archiveResult = await postsRepo.bulkDelete(selected);
+    if (archiveResult.error) {
+      push({ tone: 'error', title: 'Archive failed', description: archiveResult.error.message });
+      return;
+    }
     push({ tone: 'success', title: `Archived ${selected.length} post${selected.length === 1 ? '' : 's'}` });
     setSelected([]);
-    const res = await postsRepo.listPosts({
-      search: debouncedSearch,
-      status,
-      categoryId,
-      translation,
-      sort,
-      page,
-      pageSize: PAGE_SIZE,
-    });
-    setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
+    await refreshList();
   };
 
   const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Delete “${title}”? This cannot be undone.`)) return;
-    await postsRepo.deletePost(id);
-    push({ tone: 'success', title: 'Post deleted' });
+    if (!confirm(`Archive "${title}"? You can restore it from the Archived tab.`)) return;
+    const archiveResult = await postsRepo.deletePost(id);
+    if (archiveResult.error) {
+      push({ tone: 'error', title: 'Archive failed', description: archiveResult.error.message });
+      return;
+    }
+    push({ tone: 'success', title: 'Post archived' });
     setSelected((s) => s.filter((x) => x !== id));
-    const res = await postsRepo.listPosts({
-      search: debouncedSearch,
-      status,
-      categoryId,
-      translation,
-      sort,
-      page,
-      pageSize: PAGE_SIZE,
-    });
-    setData({ rows: res.rows, total: res.total, totalPages: res.totalPages });
+    await refreshList();
+  };
+
+  const handleRestore = async (id: string, title: string) => {
+    const restoreResult = await postsRepo.restorePost(id);
+    if (restoreResult.error) {
+      push({ tone: 'error', title: 'Restore failed', description: restoreResult.error.message });
+      return;
+    }
+    push({ tone: 'success', title: 'Post restored', description: title });
+    setSelected((s) => s.filter((x) => x !== id));
+    await refreshList();
   };
 
   return (
@@ -169,13 +179,13 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
                 Publish
               </Button>
               <Button size="sm" variant="secondary" onClick={() => handleBulk('draft')}>
-                Move to draft
+                {status === 'archived' ? 'Restore' : 'Move to draft'}
               </Button>
               <Button size="sm" variant="secondary" onClick={() => handleBulk('archived')}>
                 Archive
               </Button>
               <Button size="sm" variant="danger" onClick={handleBulkDelete} iconLeft={<Icon.Trash size={14} />}>
-                Delete
+                Archive selected
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
                 Clear
@@ -193,7 +203,7 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
           <div className="flex-1 min-w-[220px] max-w-md">
             <Input
-              placeholder="Search by title, author, or slug…"
+              placeholder="Search by title, author, or slug..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               iconLeft={<Icon.Search size={16} />}
@@ -272,6 +282,13 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
                     </tr>
                   ))
                 : data.rows.map((row) => (
+                    (() => {
+                      const publishAtMs = Date.parse(row.published_at || '');
+                      const isScheduled =
+                        row.status === 'published' &&
+                        Number.isFinite(publishAtMs) &&
+                        publishAtMs > Date.now();
+                      return (
                     <tr
                       key={row.id}
                       className={`transition-colors ${
@@ -321,7 +338,16 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
                       </td>
                       <td className="px-4 py-3 text-ink-muted">{row.author.name_en}</td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={row.status} />
+                        <div className="flex items-center gap-1.5">
+                          <StatusBadge status={row.status} />
+                          {isScheduled ? (
+                            <span title={`Scheduled for ${new Date(publishAtMs).toLocaleString()}`}>
+                              <Badge tone="warning" dot>
+                                Scheduled
+                              </Badge>
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={row.translation_status} />
@@ -353,17 +379,31 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
                           >
                             <Icon.ExternalLink size={14} />
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row.id, row.title_en || row.title_bn)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-danger-soft hover:text-danger"
-                            aria-label="Delete"
-                          >
-                            <Icon.Trash size={14} />
-                          </button>
+                          {row.status !== 'archived' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(row.id, row.title_en || row.title_bn)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-danger-soft hover:text-danger"
+                              aria-label="Archive"
+                            >
+                              <Icon.Trash size={14} />
+                            </button>
+                          ) : null}
+                          {row.status === 'archived' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRestore(row.id, row.title_en || row.title_bn)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-app hover:text-ink"
+                              aria-label="Restore"
+                            >
+                              <Icon.Refresh size={14} />
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
+                      );
+                    })()
                   ))}
               {!loading && data.rows.length === 0 ? (
                 <tr>
@@ -398,7 +438,7 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
           <span>
             {data.total === 0
               ? 'No posts'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}-${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -428,3 +468,4 @@ export default function PostsManager({ categories }: { categories: CategoryRow[]
     </div>
   );
 }
+

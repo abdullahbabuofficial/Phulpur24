@@ -61,6 +61,172 @@ interface Body {
 
 const SYSTEM = `You are a newsroom assistant for Phulpur24, a bilingual (Bangla / English) local news platform serving Phulpur upazila in Mymensingh, Bangladesh. You write fact-grounded, neutral, well-structured drafts. Use clear paragraphs and short headings. Do not fabricate quotes or named sources. Do not speculate.`;
 
+type ProviderError = {
+  provider: 'anthropic' | 'openai';
+  status: number;
+  message: string;
+  raw?: string;
+  code:
+    | 'insufficient_credits'
+    | 'invalid_request'
+    | 'auth_failed'
+    | 'rate_limited'
+    | 'upstream_error'
+    | 'network_error';
+};
+
+function classifyProviderError(
+  provider: 'anthropic' | 'openai',
+  status: number,
+  message: string,
+  raw?: string
+): ProviderError {
+  const text = `${message} ${raw ?? ''}`.toLowerCase();
+  if (text.includes('credit balance is too low') || text.includes('insufficient_quota')) {
+    return { provider, status, message, raw, code: 'insufficient_credits' };
+  }
+  if (status === 401 || status === 403) {
+    return { provider, status, message, raw, code: 'auth_failed' };
+  }
+  if (status === 429) {
+    return { provider, status, message, raw, code: 'rate_limited' };
+  }
+  if (status >= 400 && status < 500) {
+    return { provider, status, message, raw, code: 'invalid_request' };
+  }
+  return { provider, status, message, raw, code: 'upstream_error' };
+}
+
+async function generateWithAnthropic(
+  prompt: string,
+  apiKey: string
+): Promise<
+  | { ok: true; draft: string; provider: 'anthropic'; model: string }
+  | { ok: false; error: ProviderError }
+> {
+  const model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-3-5-haiku-latest';
+  try {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 25_000);
+    let res: Response;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        signal: abort.signal,
+        body: JSON.stringify({
+          model,
+          max_tokens: 1200,
+          system: SYSTEM,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      const raw = (await res.text()).slice(0, 400);
+      return {
+        ok: false,
+        error: classifyProviderError('anthropic', res.status, `Anthropic returned ${res.status}.`, raw),
+      };
+    }
+
+    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const text = (json.content ?? [])
+      .map((p) => (p.type === 'text' ? p.text ?? '' : ''))
+      .join('')
+      .trim();
+    if (!text) {
+      return {
+        ok: false,
+        error: classifyProviderError('anthropic', 502, 'Anthropic response was empty.'),
+      };
+    }
+    return { ok: true, draft: text, provider: 'anthropic', model };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown network error';
+    return {
+      ok: false,
+      error: { provider: 'anthropic', status: 0, message: msg, code: 'network_error' },
+    };
+  }
+}
+
+async function generateWithOpenAI(
+  prompt: string,
+  apiKey: string
+): Promise<
+  | { ok: true; draft: string; provider: 'openai'; model: string }
+  | { ok: false; error: ProviderError }
+> {
+  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini';
+  try {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 25_000);
+    let res: Response;
+    try {
+      res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${apiKey}`,
+        },
+        signal: abort.signal,
+        body: JSON.stringify({
+          model,
+          input: [
+            { role: 'system', content: SYSTEM },
+            { role: 'user', content: prompt },
+          ],
+          max_output_tokens: 1200,
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      const raw = (await res.text()).slice(0, 400);
+      return {
+        ok: false,
+        error: classifyProviderError('openai', res.status, `OpenAI returned ${res.status}.`, raw),
+      };
+    }
+
+    const json = (await res.json()) as {
+      output_text?: string;
+      output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+    };
+    let text = (json.output_text ?? '').trim();
+    if (!text) {
+      text = (json.output ?? [])
+        .flatMap((item) => item.content ?? [])
+        .map((part) => (part.type === 'output_text' || part.type === 'text' ? part.text ?? '' : ''))
+        .join('')
+        .trim();
+    }
+    if (!text) {
+      return {
+        ok: false,
+        error: classifyProviderError('openai', 502, 'OpenAI response was empty.'),
+      };
+    }
+    return { ok: true, draft: text, provider: 'openai', model };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown network error';
+    return {
+      ok: false,
+      error: { provider: 'openai', status: 0, message: msg, code: 'network_error' },
+    };
+  }
+}
+
 function buildPrompt({ topic, keywords, tone, language }: Required<Body>) {
   const langInstruction =
     language === 'bn'
@@ -163,81 +329,65 @@ export async function POST(request: Request) {
     );
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const prompt = buildPrompt({ topic, keywords, tone, language });
+  const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim() ?? '';
+  const openaiKey = process.env.OPENAI_API_KEY?.trim() ?? '';
+  const failures: ProviderError[] = [];
+
+  if (anthropicKey) {
+    const anth = await generateWithAnthropic(prompt, anthropicKey);
+    if (anth.ok) {
+      return NextResponse.json(
+        { ok: true, mode: 'live', provider: anth.provider, model: anth.model, draft: anth.draft },
+        { headers: NO_STORE_HEADERS }
+      );
+    }
+    failures.push(anth.error);
+  }
+
+  if (openaiKey) {
+    const oa = await generateWithOpenAI(prompt, openaiKey);
+    if (oa.ok) {
+      return NextResponse.json(
+        { ok: true, mode: 'live', provider: oa.provider, model: oa.model, draft: oa.draft },
+        { headers: NO_STORE_HEADERS }
+      );
+    }
+    failures.push(oa.error);
+  }
+
+  if (!anthropicKey && !openaiKey) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          'AI draft service is unavailable: ANTHROPIC_API_KEY is not configured.',
+        error: 'AI draft service is unavailable: configure ANTHROPIC_API_KEY or OPENAI_API_KEY.',
       },
       { status: 503, headers: NO_STORE_HEADERS }
     );
   }
 
-  try {
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 25_000);
-    let res: Response;
-    try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        signal: abort.signal,
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1200,
-          system: SYSTEM,
-          messages: [
-            { role: 'user', content: buildPrompt({ topic, keywords, tone, language }) },
-          ],
-        }),
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+  const fallbackDraft = buildFallbackDraft(requestShape);
+  const primary = failures[0];
+  const warning =
+    primary?.code === 'insufficient_credits'
+      ? `Live AI unavailable: ${primary.provider} account has insufficient credits. Returned fallback draft.`
+      : 'Live AI unavailable from configured providers. Returned fallback draft.';
 
-    if (!res.ok) {
-      const upstream = (await res.text()).slice(0, 400);
-      const fallbackDraft = buildFallbackDraft(requestShape);
-      return NextResponse.json(
-        {
-          ok: true,
-          mode: 'fallback',
-          warning: `Live AI unavailable (LLM ${res.status}). Returned fallback draft.`,
-          upstream: upstream || undefined,
-          draft: fallbackDraft,
-        },
-        { status: 200, headers: NO_STORE_HEADERS }
-      );
-    }
-
-    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-    const text = (json.content ?? [])
-      .map((p) => (p.type === 'text' ? p.text ?? '' : ''))
-      .join('')
-      .trim();
-
-    return NextResponse.json(
-      { ok: true, mode: 'live', draft: text },
-      { headers: NO_STORE_HEADERS }
-    );
-  } catch (err) {
-    const fallbackDraft = buildFallbackDraft(requestShape);
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json(
-      {
-        ok: true,
-        mode: 'fallback',
-        warning: 'Live AI request failed; returned fallback draft.',
-        upstream: message,
-        draft: fallbackDraft,
-      },
-      { status: 200, headers: NO_STORE_HEADERS }
-    );
-  }
+  return NextResponse.json(
+    {
+      ok: true,
+      mode: 'fallback',
+      provider: 'template',
+      warning,
+      diagnostics: failures.map((f) => ({
+        provider: f.provider,
+        code: f.code,
+        status: f.status,
+        message: f.message,
+      })),
+      upstream: primary?.raw || primary?.message || undefined,
+      draft: fallbackDraft,
+    },
+    { status: 200, headers: NO_STORE_HEADERS }
+  );
 }

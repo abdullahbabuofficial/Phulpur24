@@ -15,6 +15,7 @@ const ROLE_ALLOWED_PREFIXES: Record<StaffRole, readonly string[]> = {
   admin: ['/admin'],
   editor: [
     '/admin/dashboard',
+    '/admin/profile',
     '/admin/analytics',
     '/admin/posts',
     '/admin/ai-writer',
@@ -26,11 +27,11 @@ const ROLE_ALLOWED_PREFIXES: Record<StaffRole, readonly string[]> = {
     '/admin/messages',
     '/admin/settings',
   ],
-  reporter: ['/admin/dashboard', '/admin/posts', '/admin/ai-writer', '/admin/media'],
-  sports_reporter: ['/admin/dashboard', '/admin/posts', '/admin/ai-writer', '/admin/media'],
-  local_correspondent: ['/admin/dashboard', '/admin/posts', '/admin/ai-writer', '/admin/media'],
-  translator: ['/admin/dashboard', '/admin/posts', '/admin/translation', '/admin/media'],
-  seo_editor: ['/admin/dashboard', '/admin/analytics', '/admin/posts', '/admin/seo', '/admin/media'],
+  reporter: ['/admin/dashboard', '/admin/profile', '/admin/posts', '/admin/ai-writer', '/admin/media'],
+  sports_reporter: ['/admin/dashboard', '/admin/profile', '/admin/posts', '/admin/ai-writer', '/admin/media'],
+  local_correspondent: ['/admin/dashboard', '/admin/profile', '/admin/posts', '/admin/ai-writer', '/admin/media'],
+  translator: ['/admin/dashboard', '/admin/profile', '/admin/posts', '/admin/translation', '/admin/media'],
+  seo_editor: ['/admin/dashboard', '/admin/profile', '/admin/analytics', '/admin/posts', '/admin/seo', '/admin/media'],
 } as const;
 
 export function canAccessAdminPath(role: StaffRole | null, pathname: string): boolean {

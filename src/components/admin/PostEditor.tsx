@@ -11,11 +11,12 @@ import { Icon } from '@/components/admin/ui/Icon';
 import { Tabs } from '@/components/admin/ui/Tabs';
 import { Switch } from '@/components/admin/ui/Switch';
 import { useToast } from '@/components/admin/ui/Toast';
-import { posts as postsRepo } from '@/lib/supabase';
+import { posts as postsRepo, media as mediaRepo } from '@/lib/supabase';
 import type {
   ArticleWithRelations,
   AuthorRow,
   CategoryRow,
+  MediaAssetRow,
   PostStatus,
   TagRow,
   TranslationStatus,
@@ -32,6 +33,7 @@ const tabLabel: Record<Tab, string> = {
 };
 
 const AI_DRAFT_KEY = 'phulpur24.aiDraft';
+const AUTOSAVE_KEY_PREFIX = 'phulpur24.postEditor.autosave';
 
 interface Draft {
   id?: string;
@@ -74,6 +76,17 @@ const slugify = (s: string) =>
 
 const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+function toDatetimeLocalInput(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
 function buildInitialDraft(initial?: ArticleWithRelations, categories: CategoryRow[] = [], authors: AuthorRow[] = []): Draft {
   return {
     id: initial?.id,
@@ -107,6 +120,8 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
   const [draft, setDraft] = useState<Draft>(() => buildInitialDraft(initial, categories, authors));
   const [slugTouched, setSlugTouched] = useState(Boolean(initial?.slug));
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const coverUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const mediaPickerUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   type MdAction =
     | { wrap: false; prefix: string; line?: undefined }
@@ -201,6 +216,20 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
   const [tagInput, setTagInput] = useState('');
   const [aiNotes, setAiNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaPickerLoading, setMediaPickerLoading] = useState(false);
+  const [mediaPickerSearch, setMediaPickerSearch] = useState('');
+  const [mediaPickerAssets, setMediaPickerAssets] = useState<MediaAssetRow[]>([]);
+  const [mediaPickerUploadLoading, setMediaPickerUploadLoading] = useState(false);
+  const [scheduledPublishAt, setScheduledPublishAt] = useState(() =>
+    initial?.published_at ? toDatetimeLocalInput(initial.published_at) : ''
+  );
+  const [autosaveLabel, setAutosaveLabel] = useState<string | null>(null);
+  const autosaveKey = useMemo(() => `${AUTOSAVE_KEY_PREFIX}:${mode}:${initial?.id ?? 'new'}`, [mode, initial?.id]);
+  const initialSnapshotRef = useRef(JSON.stringify(buildInitialDraft(initial, categories, authors)));
+  const draftSnapshot = useMemo(() => JSON.stringify(draft), [draft]);
+  const isDirty = draftSnapshot !== initialSnapshotRef.current;
 
   // Auto-import any AI-Writer draft if creating new
   useEffect(() => {
@@ -225,6 +254,53 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
       /* ignore */
     }
   }, [mode, push]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = localStorage.getItem(autosaveKey);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { draft?: Draft; scheduledPublishAt?: string; savedAt?: string };
+      if (!parsed.draft) return;
+      if (mode === 'edit' && initial?.id && parsed.draft.id !== initial.id) return;
+      setDraft(parsed.draft);
+      if (typeof parsed.scheduledPublishAt === 'string') setScheduledPublishAt(parsed.scheduledPublishAt);
+      const when = parsed.savedAt ? new Date(parsed.savedAt).toLocaleString() : 'recently';
+      setAutosaveLabel(`Restored local draft (${when})`);
+      push({ tone: 'info', title: 'Recovered local draft', description: 'Unsaved editor content was restored.' });
+    } catch {
+      // ignore corrupt local payloads
+    }
+  }, [autosaveKey, initial?.id, mode, push]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isDirty) return;
+    const timer = window.setTimeout(() => {
+      const savedAt = new Date().toISOString();
+      localStorage.setItem(
+        autosaveKey,
+        JSON.stringify({
+          draft,
+          scheduledPublishAt,
+          savedAt,
+        })
+      );
+      setAutosaveLabel(`Autosaved at ${new Date(savedAt).toLocaleTimeString()}`);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [autosaveKey, draft, isDirty, scheduledPublishAt]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
 
   const update = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
@@ -261,17 +337,168 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
 
   const removeTag = (id: string) => update('tag_ids', draft.tag_ids.filter((x) => x !== id));
 
+  const deriveCaptionFromFilename = (name: string) => {
+    const base = name.replace(/\.[^/.]+$/, '');
+    return base.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  };
+
+  const uploadCoverImage = async (file: File) => {
+    setCoverUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('optimizeImagesToWebp', 'true');
+      form.append('webpQuality', '0.84');
+      form.append('maxImageDimension', '2560');
+
+      const uploadRes = await fetch('/api/admin/media/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const payload = (await uploadRes.json()) as {
+        ok: boolean;
+        error?: string;
+        data?: { url: string; filename: string };
+        meta?: { optimized?: boolean; reductionPct?: number };
+      };
+
+      if (!uploadRes.ok || !payload.ok || !payload.data?.url) {
+        throw new Error(payload.error ?? 'Upload failed');
+      }
+
+      update('cover_image_url', payload.data.url);
+      if (!draft.cover_image_caption.trim()) {
+        update('cover_image_caption', deriveCaptionFromFilename(payload.data.filename));
+      }
+
+      const reduction = payload.meta?.reductionPct;
+      push({
+        tone: 'success',
+        title: payload.meta?.optimized ? 'Cover uploaded and optimized' : 'Cover uploaded',
+        description:
+          typeof reduction === 'number' && reduction > 0
+            ? `Image compressed by about ${reduction}%.`
+            : 'Cover image URL has been added to this post.',
+      });
+    } catch (error) {
+      const description = error instanceof Error ? error.message : 'Upload failed';
+      push({ tone: 'error', title: 'Cover upload failed', description });
+    } finally {
+      setCoverUploading(false);
+      if (coverUploadInputRef.current) coverUploadInputRef.current.value = '';
+    }
+  };
+
+  useEffect(() => {
+    if (!mediaPickerOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMediaPickerOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mediaPickerOpen]);
+
+  useEffect(() => {
+    if (!mediaPickerOpen) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      setMediaPickerLoading(true);
+      const res = await mediaRepo.listMedia({ search: mediaPickerSearch, type: 'image' });
+      if (!active) return;
+      if (res.error) {
+        push({ tone: 'error', title: 'Could not load media', description: res.error.message });
+        setMediaPickerAssets([]);
+      } else {
+        setMediaPickerAssets(res.data ?? []);
+      }
+      setMediaPickerLoading(false);
+    }, 180);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [mediaPickerOpen, mediaPickerSearch, push]);
+
+  const selectCoverFromLibrary = (asset: MediaAssetRow) => {
+    update('cover_image_url', asset.url);
+    if (!draft.cover_image_caption.trim()) {
+      update('cover_image_caption', asset.alt_text?.trim() || deriveCaptionFromFilename(asset.filename));
+    }
+    setMediaPickerOpen(false);
+    push({ tone: 'success', title: 'Cover image selected', description: asset.filename });
+  };
+
+  const uploadAndSelectFromLibrary = async (file: File) => {
+    setMediaPickerUploadLoading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('optimizeImagesToWebp', 'true');
+      form.append('webpQuality', '0.84');
+      form.append('maxImageDimension', '2560');
+      const uploadRes = await fetch('/api/admin/media/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const payload = (await uploadRes.json()) as {
+        ok: boolean;
+        error?: string;
+        data?: MediaAssetRow;
+      };
+      if (!uploadRes.ok || !payload.ok || !payload.data) {
+        throw new Error(payload.error ?? 'Upload failed');
+      }
+      const uploaded = payload.data;
+      setMediaPickerAssets((prev) => [uploaded, ...prev]);
+      selectCoverFromLibrary(uploaded);
+    } catch (error) {
+      const description = error instanceof Error ? error.message : 'Upload failed';
+      push({ tone: 'error', title: 'Upload failed', description });
+    } finally {
+      setMediaPickerUploadLoading(false);
+      if (mediaPickerUploadInputRef.current) mediaPickerUploadInputRef.current.value = '';
+    }
+  };
+
   const tagChips = draft.tag_ids.map((id) => {
     const found = allTags.find((t) => t.id === id);
     return { id, label: found ? found.name_en : id.replace('tag-', '') };
   });
 
-  const persist = async (nextStatus?: PostStatus) => {
-    setSaving(true);
+  const persist = async (nextStatus?: PostStatus, options?: { publishAt?: string | null }) => {
     const status = nextStatus ?? draft.status;
+    const resolvedTitle = (draft.title_en || draft.title_bn).trim();
+    if (!resolvedTitle) {
+      push({ tone: 'warning', title: 'Title is required', description: 'Add an English or Bangla title before saving.' });
+      return;
+    }
+    if (!draft.category_id) {
+      push({ tone: 'warning', title: 'Category is required' });
+      return;
+    }
+    if (!draft.author_id) {
+      push({ tone: 'warning', title: 'Author is required' });
+      return;
+    }
+    const hasBody = Boolean((draft.body_en || draft.body_bn).trim());
+    if (status !== 'draft' && !hasBody) {
+      push({ tone: 'warning', title: 'Body is required', description: 'Write article content before submitting or publishing.' });
+      return;
+    }
+    if (status === 'published' && !draft.cover_image_url.trim()) {
+      push({ tone: 'warning', title: 'Cover image is required', description: 'Select or upload a cover image before publishing.' });
+      return;
+    }
+    const requestedPublishAtRaw = options?.publishAt?.trim() ?? '';
+    const requestedPublishAtMs = requestedPublishAtRaw ? Date.parse(requestedPublishAtRaw) : Number.NaN;
+    const requestedPublishAt = Number.isFinite(requestedPublishAtMs) ? new Date(requestedPublishAtMs).toISOString() : null;
+
+    setSaving(true);
     const res = await postsRepo.upsertPost({
       id: draft.id,
-      slug: draft.slug || slugify(draft.title_en || 'untitled'),
+      slug: draft.slug || slugify(resolvedTitle || 'untitled'),
       title_bn: draft.title_bn,
       title_en: draft.title_en,
       subtitle_bn: draft.subtitle_bn,
@@ -289,6 +516,7 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
       seo_title: draft.seo_title || null,
       seo_description: draft.seo_description || null,
       seo_focus_keyword: draft.seo_focus_keyword || null,
+      publish_at: status === 'published' ? requestedPublishAt : null,
       tag_ids: draft.tag_ids,
     });
     setSaving(false);
@@ -300,6 +528,10 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
       tone: 'success',
       title: status === 'published' ? 'Published' : status === 'pending' ? 'Submitted for review' : 'Draft saved',
     });
+    setDraft((d) => ({ ...d, status }));
+    initialSnapshotRef.current = JSON.stringify({ ...draft, status });
+    if (typeof window !== 'undefined') localStorage.removeItem(autosaveKey);
+    setAutosaveLabel(`Saved at ${new Date().toLocaleTimeString()}`);
     if (mode === 'create' && res.data) {
       router.replace(`/admin/posts/${res.data.id}`);
     }
@@ -315,8 +547,20 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
     push({ tone: 'info', title: 'AI suggestion generated' });
   };
 
+  const applyStatusLabel =
+    draft.status === 'published'
+      ? mode === 'create'
+        ? 'Publish now'
+        : 'Update published post'
+      : draft.status === 'pending'
+      ? 'Submit for review'
+      : draft.status === 'archived'
+      ? 'Archive post'
+      : 'Save as draft';
+
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
       {/* Main column */}
       <div className="min-w-0 space-y-5">
         {/* Title & slug */}
@@ -648,12 +892,42 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
               onChange={(v) => update('breaking', v)}
             />
             <div className="flex flex-col gap-2 pt-1">
-              <Button onClick={() => persist('published')} loading={saving} iconLeft={<Icon.Check size={14} />}>
-                {mode === 'create' ? 'Publish' : 'Update & publish'}
+              <Button onClick={() => persist()} loading={saving} iconLeft={<Icon.Check size={14} />}>
+                {applyStatusLabel}
               </Button>
               <Button variant="secondary" onClick={() => persist('draft')} loading={saving}>
                 Save draft
               </Button>
+              <div className="rounded-lg border border-line bg-app p-2.5">
+                <label className="mb-1.5 block text-xs font-medium text-ink">Schedule publish (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledPublishAt}
+                  onChange={(e) => setScheduledPublishAt(e.target.value)}
+                  className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-xs text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/15"
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2 w-full"
+                  onClick={() => {
+                    if (!scheduledPublishAt) {
+                      push({ tone: 'warning', title: 'Pick a date and time to schedule publish.' });
+                      return;
+                    }
+                    const scheduleAtMs = Date.parse(scheduledPublishAt);
+                    if (!Number.isFinite(scheduleAtMs) || scheduleAtMs <= Date.now()) {
+                      push({ tone: 'warning', title: 'Schedule time must be in the future.' });
+                      return;
+                    }
+                    void persist('published', { publishAt: scheduledPublishAt });
+                  }}
+                  disabled={saving}
+                  iconLeft={<Icon.Clock size={14} />}
+                >
+                  Schedule publish
+                </Button>
+              </div>
               {mode === 'edit' && draft.id ? (
                 <Link href={`/bn/news/${draft.slug}`} target="_blank" rel="noreferrer">
                   <Button variant="ghost" fullWidth iconLeft={<Icon.ExternalLink size={14} />}>
@@ -661,6 +935,7 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
                   </Button>
                 </Link>
               ) : null}
+              {autosaveLabel ? <p className="text-[11px] text-ink-muted">{autosaveLabel}</p> : null}
             </div>
           </div>
         </Card>
@@ -741,7 +1016,39 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
 
         <Card padded>
           <CardHeader title="Cover image" />
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-3">
+            <input
+              ref={coverUploadInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadCoverImage(file);
+              }}
+              aria-label="Upload cover image"
+            />
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={coverUploading}
+                iconLeft={<Icon.Upload size={14} />}
+                onClick={() => coverUploadInputRef.current?.click()}
+              >
+                {coverUploading ? 'Uploading...' : 'Upload cover'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                iconLeft={<Icon.Image size={14} />}
+                onClick={() => setMediaPickerOpen(true)}
+              >
+                Select from library
+              </Button>
+            </div>
             {draft.cover_image_url.trim() ? (
               <img src={draft.cover_image_url.trim()} alt="" className="aspect-video w-full rounded-lg object-cover" />
             ) : (
@@ -764,6 +1071,95 @@ export default function PostEditor({ mode, initial, categories, authors, allTags
           </div>
         </Card>
       </aside>
-    </div>
+      </div>
+
+      {mediaPickerOpen ? (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Select cover image from media library">
+          <div className="absolute inset-0 bg-ink/55" onClick={() => setMediaPickerOpen(false)} />
+          <div className="absolute inset-x-3 top-6 bottom-6 mx-auto flex max-w-5xl flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">Media library</p>
+                <p className="text-xs text-ink-muted">Select an image to use as this post cover.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center justify-center rounded-md border border-line px-2 text-xs text-ink hover:bg-app"
+                  onClick={() => mediaPickerUploadInputRef.current?.click()}
+                  disabled={mediaPickerUploadLoading}
+                >
+                  {mediaPickerUploadLoading ? 'Uploading...' : 'Upload new'}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-app hover:text-ink"
+                  onClick={() => setMediaPickerOpen(false)}
+                  aria-label="Close media picker"
+                >
+                  <Icon.Close size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="border-b border-line px-4 py-3">
+              <Input
+                value={mediaPickerSearch}
+                onChange={(e) => setMediaPickerSearch(e.target.value)}
+                placeholder="Search images by filename or uploader..."
+                iconLeft={<Icon.Search size={14} />}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {mediaPickerLoading ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="skeleton aspect-square rounded-xl" />
+                  ))}
+                </div>
+              ) : mediaPickerAssets.length === 0 ? (
+                <div className="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-line bg-app text-sm text-ink-muted">
+                  No images found. Upload a new one or change your search.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {mediaPickerAssets.map((asset) => (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className="group overflow-hidden rounded-xl border border-line bg-white text-left transition hover:border-accent/40 hover:shadow-card"
+                      onClick={() => selectCoverFromLibrary(asset)}
+                    >
+                      <div className="aspect-square overflow-hidden bg-app">
+                        <img
+                          src={asset.url}
+                          alt={asset.alt_text?.trim() || asset.filename}
+                          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                        />
+                      </div>
+                      <div className="p-2">
+                        <p className="line-clamp-1 text-xs font-medium text-ink">{asset.filename}</p>
+                        <p className="mt-0.5 text-[11px] text-ink-muted">{asset.size_label}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <input
+            ref={mediaPickerUploadInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void uploadAndSelectFromLibrary(file);
+            }}
+            aria-label="Upload and select cover image"
+          />
+        </div>
+      ) : null}
+    </>
   );
 }

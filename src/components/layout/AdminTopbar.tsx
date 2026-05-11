@@ -85,6 +85,7 @@ export default function AdminTopbar({
         { id: 'newsletter', title: 'Newsletter', subtitle: 'Subscribers and export', href: '/admin/newsletter', keywords: ['subscribers', 'email', 'csv'] },
         { id: 'messages', title: 'Messages', subtitle: 'Reader contact inbox', href: '/admin/messages', keywords: ['inbox', 'contact', 'support'] },
         { id: 'users', title: 'Users & Roles', subtitle: 'Team members and permissions', href: '/admin/users', keywords: ['team', 'role', 'access'] },
+        { id: 'profile', title: 'My Profile', subtitle: 'Account, security, and preferences', href: '/admin/profile', keywords: ['account', 'profile', 'password'] },
         { id: 'settings', title: 'Settings', subtitle: 'Branding and feature controls', href: '/admin/settings', keywords: ['site config', 'features', 'social'] },
       ].filter((item) => canAccessAdminPath(role, item.href)),
     [role]

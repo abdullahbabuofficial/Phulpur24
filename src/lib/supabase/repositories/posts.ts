@@ -35,7 +35,7 @@ function flatten(row: Record<string, unknown>): ArticleWithRelations {
 
 export interface ListPostsParams {
   search?: string;
-  status?: PostStatus | 'all';
+  status?: PostStatus | 'all' | 'scheduled';
   categoryId?: string | 'all';
   translation?: TranslationStatus | 'all';
   page?: number;
@@ -67,19 +67,45 @@ export async function listPosts(params: ListPostsParams = {}): Promise<ListPosts
   const articleSelect = includeContent ? ARTICLE_SELECT_WITH_CONTENT : ARTICLE_SELECT_LIST;
   let query = supabase.from('articles').select(articleSelect as '*', { count: 'exact' });
 
-  if (status !== 'all') query = query.eq('status', status);
+  const nowIso = new Date().toISOString();
+  if (status === 'scheduled') {
+    query = query.eq('status', 'published').gt('published_at', nowIso);
+  } else if (status === 'published') {
+    query = query
+      .eq('status', 'published')
+      .or(`published_at.lte.${nowIso},published_at.is.null`);
+  } else if (status !== 'all') {
+    query = query.eq('status', status);
+  }
   if (categoryId !== 'all') query = query.eq('category_id', categoryId);
   if (translation !== 'all') query = query.eq('translation_status', translation);
   if (search.trim()) {
-    const q = `%${search.trim()}%`;
-    query = query.or(
-      `title_bn.ilike.${q},title_en.ilike.${q},slug.ilike.${q},subtitle_bn.ilike.${q},subtitle_en.ilike.${q}`
-    );
+    const needle = search.trim();
+    const q = `%${needle}%`;
+    const orFilters = [
+      `title_bn.ilike.${q}`,
+      `title_en.ilike.${q}`,
+      `slug.ilike.${q}`,
+      `subtitle_bn.ilike.${q}`,
+      `subtitle_en.ilike.${q}`,
+    ];
+
+    const { data: authors } = await supabase
+      .from('authors')
+      .select('id')
+      .or(`name_en.ilike.${q},name_bn.ilike.${q}`);
+    const authorIds = (authors ?? []).map((a) => a.id).filter(Boolean);
+    if (authorIds.length > 0) {
+      const idList = authorIds.map((id) => String(id).replace(/,/g, '')).join(',');
+      orFilters.push(`author_id.in.(${idList})`);
+    }
+
+    query = query.or(orFilters.join(','));
   }
 
   switch (sort) {
     case 'oldest':
-      query = query.order('published_at', { ascending: true });
+      query = query.order('updated_at', { ascending: true });
       break;
     case 'most-views':
       query = query.order('views', { ascending: false });
@@ -88,7 +114,7 @@ export async function listPosts(params: ListPostsParams = {}): Promise<ListPosts
       query = query.order('seo_score', { ascending: false });
       break;
     default:
-      query = query.order('published_at', { ascending: false });
+      query = query.order('updated_at', { ascending: false });
   }
 
   const from = Math.max(0, (page - 1) * pageSize);
@@ -127,10 +153,12 @@ export async function getPostBySlug(slug: string) {
 }
 
 export async function topPosts(limit = 5) {
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_SELECT_LIST as '*')
     .eq('status', 'published')
+    .lte('published_at', nowIso)
     .order('views', { ascending: false })
     .limit(limit);
   return {
@@ -159,12 +187,23 @@ export interface PostUpsert {
   seo_title: string | null;
   seo_description: string | null;
   seo_focus_keyword: string | null;
+  publish_at?: string | null;
   tag_ids: string[];
 }
 
 export async function upsertPost(input: PostUpsert) {
   const now = new Date().toISOString();
   const id = input.id ?? `art-${Date.now()}`;
+  const isNew = !input.id;
+  const { data: existingRow } = isNew
+    ? { data: null as Pick<ArticleRow, 'status' | 'published_at'> | null }
+    : await supabase.from('articles').select('status,published_at').eq('id', id).maybeSingle();
+  const requestedPublishAtMs =
+    input.status === 'published' && input.publish_at ? Date.parse(input.publish_at) : Number.NaN;
+  const requestedPublishAtIso =
+    Number.isFinite(requestedPublishAtMs) && requestedPublishAtMs > 0
+      ? new Date(requestedPublishAtMs).toISOString()
+      : null;
 
   const row: Partial<ArticleRow> & { id: string } = {
     id,
@@ -211,10 +250,16 @@ export async function upsertPost(input: PostUpsert) {
     }
   }
 
-  // Upsert article. If new, set published_at and created_at too.
-  const isNew = !input.id;
+  // Stamp published_at when a post becomes published.
+  const shouldStampPublishedAt =
+    input.status === 'published' &&
+    (requestedPublishAtIso
+      ? requestedPublishAtIso !== (existingRow?.published_at ?? null)
+      : isNew || existingRow?.status !== 'published');
   const upsertRow = isNew
-    ? { ...row, published_at: now, created_at: now }
+    ? { ...row, published_at: requestedPublishAtIso ?? now, created_at: now }
+    : shouldStampPublishedAt
+    ? { ...row, published_at: requestedPublishAtIso ?? now }
     : row;
 
   const { error: upsertErr } = await supabase
@@ -271,9 +316,14 @@ export async function restorePost(id: string) {
 }
 
 export async function bulkUpdateStatus(ids: string[], status: PostStatus) {
+  const now = new Date().toISOString();
+  const patch: Partial<ArticleRow> & { updated_at: string } =
+    status === 'published'
+      ? { status, updated_at: now, published_at: now }
+      : { status, updated_at: now };
   const { error } = await supabase
     .from('articles')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update(patch)
     .in('id', ids);
   if (!error) {
     void logAction(`Bulk → ${status}`, `${ids.length} article${ids.length === 1 ? '' : 's'}`, 'Admin', 'pencil');

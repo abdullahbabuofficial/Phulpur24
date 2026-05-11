@@ -190,15 +190,25 @@ export default function AdminSidebar({
           </span>
           <Icon.ArrowRight size={12} />
         </Link>
-        <div className="flex items-center gap-3 rounded-lg bg-sidebar-hover/60 p-2.5">
-          <Avatar name={userName} size="md" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold text-white">{userName}</p>
-            <p className="truncate text-[10px] text-sidebar-muted">{userEmail}</p>
-            <p className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-sidebar-muted/80">
-              {staffRoleLabel(role)}
-            </p>
-          </div>
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar-hover/60 p-2.5">
+          <Link
+            href="/admin/profile"
+            onClick={onNavigate}
+            className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 hover:bg-sidebar-hover"
+            aria-label="Open profile"
+          >
+            <Avatar name={userName} size="md" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-white">{userName}</p>
+              <p className="truncate text-[10px] text-sidebar-muted">{userEmail}</p>
+              <p className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-sidebar-muted/80">
+                {staffRoleLabel(role)}
+              </p>
+            </div>
+            <span className="rounded-md p-1 text-sidebar-muted group-hover:bg-sidebar-active group-hover:text-white">
+              <Icon.ArrowRight size={14} />
+            </span>
+          </Link>
           <button
             type="button"
             onClick={handleSignOut}
